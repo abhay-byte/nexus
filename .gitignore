@@ -1,0 +1,38 @@
+# Nexus Terminal — .gitignore
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+src-tauri/target/
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+Thumbs.db
+
+# Tauri WebKit cache / generated
+src-tauri/gen/
+WKWebView*
+
+# Test artifacts
+/coverage
+
+# Stitch design files (design only, not needed in repo)
+stitch/
