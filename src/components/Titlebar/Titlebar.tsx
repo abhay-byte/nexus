@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useSessionStore } from "../../store/sessionStore";
 import type { Project } from "../../types";
 
 interface TitlebarProps {
@@ -15,6 +16,8 @@ interface TitlebarProps {
 export function Titlebar({ projects, activeProjectId, openProjectIds, projectAttention, onSelectProject, onOpenSettings, onOpenSearch }: TitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const appWindow = getCurrentWindow();
+  const runtimeInfo = useSessionStore((state) => state.runtimeInfo);
+  const isMac = runtimeInfo?.os === "macos";
 
   useEffect(() => {
     let mounted = true;
@@ -73,17 +76,24 @@ export function Titlebar({ projects, activeProjectId, openProjectIds, projectAtt
         </nav>
       </div>
       <div className="flex items-center gap-4 shrink-0">
-        <div className="flex gap-2 mr-4">
-          <span className="w-3 h-3 rounded-full bg-[#e63b2e] border border-[#1a1a1a]"></span>
-          <span className="w-3 h-3 rounded-full bg-[#ffcc00] border border-[#1a1a1a]"></span>
-          <span className="w-3 h-3 rounded-full bg-[#00ff00] border border-[#1a1a1a]"></span>
-        </div>
+        {isMac && (
+          <div className="flex gap-2 mr-4 group">
+            <span className="w-3 h-3 rounded-full bg-[#e63b2e] border border-[#1a1a1a] cursor-pointer hover:brightness-110" onClick={() => void appWindow.close()}></span>
+            <span className="w-3 h-3 rounded-full bg-[#ffcc00] border border-[#1a1a1a] cursor-pointer hover:brightness-110" onClick={() => void appWindow.minimize()}></span>
+            <span className="w-3 h-3 rounded-full bg-[#00ff00] border border-[#1a1a1a] cursor-pointer hover:brightness-110" onClick={() => void appWindow.toggleMaximize()}></span>
+          </div>
+        )}
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={onOpenSearch}>search</span>
           <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={onOpenSettings}>settings</span>
-          <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={() => void appWindow.minimize()}>minimize</span>
-          <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={() => void appWindow.toggleMaximize()}>{isMaximized ? "restore_page" : "maximize"}</span>
-          <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#e63b2e] hover:text-white p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-white" onClick={() => void appWindow.close()}>close</span>
+          
+          {!isMac && (
+            <>
+              <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={() => void appWindow.minimize()}>minimize</span>
+              <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={() => void appWindow.toggleMaximize()}>{isMaximized ? "restore_page" : "maximize"}</span>
+              <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#e63b2e] hover:text-white p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-white" onClick={() => void appWindow.close()}>close</span>
+            </>
+          )}
         </div>
       </div>
     </header>

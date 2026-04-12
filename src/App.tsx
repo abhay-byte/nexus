@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openPath } from "@tauri-apps/plugin-shell";
 import { AgentBar } from "./components/AgentBar/AgentBar";
@@ -15,7 +16,7 @@ import { KanbanBoard } from "./components/Kanban/KanbanBoard";
 import { KNOWN_AGENTS } from "./constants/agents";
 import { useProjectStore } from "./store/projectStore";
 import { useSessionStore } from "./store/sessionStore";
-import type { Project } from "./types";
+import type { Project, SystemHealth } from "./types";
 
 function BrutalistDropdown({ value, options, onChange }: { value: string, options: {label: string, value: string}[], onChange: (val: string) => void }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -101,6 +102,25 @@ function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [dismissedProjectError, setDismissedProjectError] = useState<string | null>(null);
+  const [health, setHealth] = useState<SystemHealth | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const fetchHealth = async () => {
+      try {
+        const result = await invoke<SystemHealth>("system_health");
+        if (active) setHealth(result);
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    void fetchHealth();
+    const timer = setInterval(() => void fetchHealth(), 2000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     void initializeProjects();
@@ -444,6 +464,7 @@ function App() {
         project={activeProject}
         runningCount={runningCount}
         runtimeInfo={runtimeInfo}
+        health={health}
       />
 
       {isAddProjectOpen ? (
@@ -585,13 +606,6 @@ function App() {
                         {style}
                       </button>
                     ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center p-4 bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] border-4 border-primary dark:border-[#f5f0e8] cursor-pointer hover:bg-primary-container dark:hover:bg-[#2a2a2a]" onClick={() => upsertSettings({ cursorBlink: !settings.cursorBlink })}>
-                  <p className="font-headline font-black text-sm uppercase tracking-widest text-[#4a4a4a] dark:text-[#a0a0a0]">Cursor Blink</p>
-                  <div className="w-14 h-8 bg-[#e8e3da] dark:bg-[#2a2a2a] border-2 border-primary dark:border-[#f5f0e8] relative">
-                    <div className={`absolute top-[2px] bottom-[2px] w-6 border-2 border-primary dark:border-[#f5f0e8] transition-all ${settings.cursorBlink ? 'right-[2px] bg-[#ffcc00] dark:bg-[#ffcc00]' : 'left-[2px] bg-[#1a1a1a] dark:bg-[#f5f0e8]'}`}></div>
                   </div>
                 </div>
 

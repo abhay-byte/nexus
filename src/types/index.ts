@@ -124,3 +124,9 @@ export interface RuntimeInfo {
   shell: string;
   os: string;
 }
+
+export interface SystemHealth {
+  cpu: number;
+  ram_used: number;
+  ram_total: number;
+}

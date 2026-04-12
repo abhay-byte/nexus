@@ -23,6 +23,30 @@ pub struct RuntimeInfo {
     pub os: String,
 }
 
+#[derive(Serialize, Clone)]
+pub struct SystemHealth {
+    pub cpu: f32,
+    pub ram_used: f64,
+    pub ram_total: f64,
+}
+
+#[tauri::command]
+pub fn system_health(state: State<'_, AppState>) -> SystemHealth {
+    let mut sys = state.sys.lock().unwrap();
+    sys.refresh_cpu_usage();
+    sys.refresh_memory();
+
+    let cpu = sys.global_cpu_usage();
+    let ram_used = sys.used_memory() as f64 / 1_073_741_824.0;
+    let ram_total = sys.total_memory() as f64 / 1_073_741_824.0;
+
+    SystemHealth {
+        cpu,
+        ram_used,
+        ram_total,
+    }
+}
+
 fn default_shell(shell_override: Option<String>) -> String {
     if let Some(shell) = shell_override.filter(|value| !value.trim().is_empty()) {
         return shell;

@@ -4,6 +4,7 @@ use std::{
     io::Write,
     sync::{Arc, Mutex},
 };
+use sysinfo::System;
 
 pub struct PtySession {
     pub writer: Mutex<Box<dyn Write + Send>>,
@@ -27,12 +28,14 @@ impl PtySession {
 
 pub struct AppState {
     pub sessions: Mutex<HashMap<String, Arc<PtySession>>>,
+    pub sys: Mutex<System>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
+            sys: Mutex::new(System::new_all()),
         }
     }
 }

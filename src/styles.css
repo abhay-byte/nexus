@@ -168,3 +168,10 @@ h1, h2, h3, .brand-font, .headline {
   background: #ffcc00;
   opacity: 0.5;
 }
+
+/* Force disable xterm cursor blinking */
+.terminal-view .xterm-cursor-blink {
+  animation: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}

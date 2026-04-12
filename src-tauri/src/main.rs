@@ -20,7 +20,8 @@ fn main() {
             resize_pty,
             kill_pty,
             detect_installed_agents,
-            runtime_info
+            runtime_info,
+            crate::pty::system_health
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Nexus application");

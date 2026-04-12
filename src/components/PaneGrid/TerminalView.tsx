@@ -51,7 +51,7 @@ export function TerminalView({
       letterSpacing: 0,
       lineHeight: 1.2,
       cursorStyle,
-      cursorBlink,
+      cursorBlink: false, /* forced off per request */
       allowTransparency: false,
       macOptionIsMeta: true,
       rightClickSelectsWord: true,
@@ -148,7 +148,13 @@ export function TerminalView({
 
     void listen<number[]>(`pty-output:${session.id}`, (event) => {
       const payload = new Uint8Array(event.payload);
-      term.write(payload);
+      
+      term.options.cursorBlink = false;
+      
+      term.write(payload, () => {
+        term.options.cursorBlink = false;
+      });
+      
       markSessionStatus(session.id, "running");
       noteSessionActivity(session.id);
       appendSessionOutput(session.id, payload);

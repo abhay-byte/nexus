@@ -35,6 +35,49 @@
 
 ---
 
+## Install
+
+### ⚡ One-line install (no manual setup required)
+
+Paste this in your terminal. It automatically installs system libraries, Rust, Node.js, and Nexus itself:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/abhay-byte/nexus/main/install.sh | bash
+```
+
+Then launch from anywhere:
+```bash
+nexus
+```
+
+> **Requires `~/.local/bin` in your PATH** — the script will tell you if you need to add it.  
+> Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` / `~/.zshrc` if needed, then `source ~/.bashrc`.
+
+**What the script does:**
+1. Detects your distro (Debian/Ubuntu, Arch, Fedora, openSUSE) and installs Tauri system libraries
+2. Installs **Rust** via `rustup` if not present
+3. Installs **Node.js 20** via `fnm` if not present
+4. Clones this repo to a temp directory
+5. Builds the release binary (`npm run tauri build --no-bundle`)
+6. Copies the binary to `~/.local/bin/nexus`
+7. Creates a `.desktop` entry so it appears in your app launcher
+
+---
+
+### Manual install (from cloned repo)
+
+If you already have Node.js ≥ 18 and Rust + Cargo installed:
+
+```bash
+# Install Tauri system dependencies (Debian/Ubuntu)
+sudo apt install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+
+# Clone + build + install
+git clone https://github.com/abhay-byte/nexus.git && cd nexus && ./install.sh
+```
+
+---
+
 ## Tech Stack
 
 | Layer | Tech |
@@ -45,40 +88,6 @@
 | Terminal | xterm.js via `@xterm/xterm` |
 | PTY backend | `portable-pty` (Rust) |
 | Styling | Tailwind CSS (utility-only) + custom brutalist tokens |
-
----
-
-## Requirements
-
-- Linux (x86_64 or ARM64)
-- Node.js ≥ 18
-- Rust + Cargo (stable)
-- `libwebkit2gtk-4.1`, `libgtk-3-dev`, `libayatana-appindicator3-dev` (Tauri deps)
-
-Install Tauri system deps:
-```bash
-sudo apt install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-```
-
----
-
-## Install (system-wide, one command)
-
-```bash
-git clone https://github.com/abhay-byte/nexus.git && cd nexus && ./install.sh
-```
-
-Then run from anywhere:
-```bash
-nexus
-```
-
-The script:
-1. Builds the release binary (`cargo build --release`)
-2. Copies the binary to `~/.local/bin/nexus`
-3. Creates a `.desktop` entry so it appears in your application launcher
-
-> **Ensure `~/.local/bin` is in your PATH** — add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` or `~/.zshrc` if needed.
 
 ---
 
@@ -151,7 +160,7 @@ nexus/
 │   │   └── pty.rs          # PTY spawn / resize / kill
 │   └── capabilities/       # Tauri permission config
 ├── docs/screenshots/       # README screenshots
-├── install.sh              # System-wide install (one command)
+├── install.sh              # System-wide install (one command, zero deps)
 └── run.sh                  # Dev launcher (sources shell profile)
 ```
 

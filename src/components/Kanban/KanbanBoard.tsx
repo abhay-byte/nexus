@@ -47,9 +47,9 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0d0d0d] overflow-hidden">
+    <div className="flex flex-col h-full bg-[#f5f0e8] dark:bg-[#0d0d0d] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-4 px-6 py-3 border-b-2 border-[#333] shrink-0">
+      <div className="flex items-center gap-4 px-6 py-3 border-b-2 border-black dark:border-[#333] shrink-0">
         <span className="font-['Space_Grotesk'] font-black text-xs uppercase tracking-widest text-[#ffcc00]">
           ◈ Kanban
         </span>
@@ -66,7 +66,7 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
           return (
             <div
               key={col.id}
-              className={`flex flex-col flex-1 min-w-[200px] border-r-2 border-[#222] transition-colors ${isOver ? "bg-[#1a1a1a]" : ""}`}
+              className={`flex flex-col flex-1 min-w-[200px] border-r-2 border-black dark:border-[#222] transition-colors ${isOver ? "bg-[#e8e3da] dark:bg-[#1a1a1a]" : ""}`}
               onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.id); }}
               onDragLeave={() => setDragOverCol(null)}
               onDrop={(e) => {
@@ -78,7 +78,7 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
             >
               {/* Column header */}
               <div
-                className="flex items-center justify-between px-3 py-2 shrink-0 border-b-2 border-[#222]"
+                className="flex items-center justify-between px-3 py-2 shrink-0 border-b-2 border-black dark:border-[#222]"
                 style={{ background: col.bg, color: col.color }}
               >
                 <span className="font-['Space_Grotesk'] font-black text-xs uppercase tracking-widest">
@@ -96,11 +96,11 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
                     key={task.id}
                     draggable
                     onDragStart={(e) => e.dataTransfer.setData("text/plain", task.id)}
-                    className="group bg-[#1a1a1a] border-2 border-[#333] p-2 cursor-grab active:cursor-grabbing hover:border-[#ffcc00] transition-colors"
+                    className="group bg-white dark:bg-[#1a1a1a] border-2 border-black dark:border-[#333] p-2 cursor-grab active:cursor-grabbing hover:border-[#ffcc00] dark:hover:border-[#ffcc00] transition-colors"
                   >
                     {editingId === task.id ? (
                       <input
-                        className="w-full bg-transparent text-[#f5f0e8] font-['Space_Grotesk'] text-xs outline-none border-b border-[#ffcc00]"
+                        className="w-full bg-transparent text-[#1a1a1a] dark:text-[#f5f0e8] font-['Space_Grotesk'] text-xs outline-none border-b border-[#ffcc00]"
                         value={editText}
                         autoFocus
                         onChange={(e) => setEditText(e.target.value)}
@@ -112,7 +112,7 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
                       />
                     ) : (
                       <p
-                        className="text-[#f5f0e8] font-['Space_Grotesk'] text-xs leading-tight select-none"
+                        className="text-[#1a1a1a] dark:text-[#f5f0e8] font-['Space_Grotesk'] text-xs leading-tight select-none"
                         onDoubleClick={() => startEdit(task.id, task.title)}
                         title="Double-click to edit"
                       >
@@ -123,7 +123,7 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
                     {/* Actions row */}
                     <div className="flex items-center justify-between mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
-                        className="text-[9px] font-['Space_Grotesk'] font-black uppercase px-1.5 py-0.5 border border-[#333] text-[#888] hover:text-[#ffcc00] hover:border-[#ffcc00]"
+                        className="text-[9px] font-['Space_Grotesk'] font-black uppercase px-1.5 py-0.5 border border-gray-300 dark:border-[#333] text-gray-500 dark:text-[#888] hover:text-[#ffcc00] hover:border-[#ffcc00] dark:hover:text-[#ffcc00] dark:hover:border-[#ffcc00]"
                         onClick={() => moveTask(task.id, nextStatus(task.status))}
                         title="Move to next status"
                         type="button"
@@ -131,7 +131,7 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
                         → {nextStatus(task.status).replace("-", " ")}
                       </button>
                       <button
-                        className="text-[9px] font-black text-[#444] hover:text-[#e63b2e] px-1"
+                        className="text-[9px] font-black text-gray-400 dark:text-[#444] hover:text-[#e63b2e] px-1"
                         onClick={() => deleteTask(task.id)}
                         title="Delete task"
                         type="button"
@@ -144,9 +144,9 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
 
                 {/* Add task input */}
                 {adding === col.id ? (
-                  <div className="border-2 border-[#ffcc00] bg-[#111] p-2">
+                  <div className="border-2 border-[#ffcc00] bg-white dark:bg-[#111] p-2">
                     <textarea
-                      className="w-full bg-transparent text-[#f5f0e8] font-['Space_Grotesk'] text-xs resize-none outline-none placeholder-[#444] leading-tight"
+                      className="w-full bg-transparent text-[#1a1a1a] dark:text-[#f5f0e8] font-['Space_Grotesk'] text-xs resize-none outline-none placeholder-gray-400 dark:placeholder-[#444] leading-tight"
                       placeholder="Task title…"
                       rows={2}
                       autoFocus
@@ -176,7 +176,7 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
                   </div>
                 ) : (
                   <button
-                    className="text-left text-[10px] font-['Space_Grotesk'] uppercase font-bold text-[#333] hover:text-[#ffcc00] border border-dashed border-[#2a2a2a] hover:border-[#ffcc00] p-2 transition-colors"
+                    className="text-left text-[10px] font-['Space_Grotesk'] uppercase font-bold text-gray-400 dark:text-[#333] hover:text-[#ffcc00] dark:hover:text-[#ffcc00] border border-dashed border-gray-300 dark:border-[#2a2a2a] hover:border-[#ffcc00] dark:hover:border-[#ffcc00] p-2 transition-colors"
                     onClick={() => setAdding(col.id)}
                     type="button"
                   >
