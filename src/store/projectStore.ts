@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { PROJECT_SWATCHES } from "../constants/agents";
+import { syncProjectMcpFiles } from "../lib/projectMcpSync";
 import { loadProjects, saveProjects } from "../lib/persistence";
 import type { AddProjectDraft, Project } from "../types";
 
@@ -46,6 +47,7 @@ export const useProjectStore = create<ProjectStoreState>()(
 
       try {
         const projects = await loadProjects();
+        await Promise.allSettled(projects.map((project) => syncProjectMcpFiles(project)));
         const fallbackOpen = projects[0] ? [projects[0].id] : [];
 
         set({
@@ -94,6 +96,7 @@ export const useProjectStore = create<ProjectStoreState>()(
       }));
 
       await syncProjectsToDisk(projects);
+      await syncProjectMcpFiles(project);
     },
     updateProject: async (projectId, patch) => {
       const projects = get().projects.map((project) =>
@@ -112,6 +115,10 @@ export const useProjectStore = create<ProjectStoreState>()(
 
       set({ projects, error: null });
       await syncProjectsToDisk(projects);
+      const updatedProject = projects.find((project) => project.id === projectId);
+      if (updatedProject) {
+        await syncProjectMcpFiles(updatedProject);
+      }
     },
     removeProject: async (projectId) => {
       const projects = get().projects.filter((project) => project.id !== projectId);

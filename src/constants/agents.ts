@@ -72,27 +72,6 @@ export const KNOWN_AGENTS: AgentConfig[] = [
     color: "#A78BFA",
     statusColor: "#8B5CF6",
   },
-  {
-    id: "continue",
-    name: "Continue",
-    command: "continue",
-    color: "#6EE7B7",
-    statusColor: "#059669",
-  },
-  {
-    id: "goose",
-    name: "Goose",
-    command: "goose",
-    color: "#FCA5A5",
-    statusColor: "#EF4444",
-  },
-  {
-    id: "amp",
-    name: "Amp",
-    command: "amp",
-    color: "#93C5FD",
-    statusColor: "#3B82F6",
-  },
 ];
 
 

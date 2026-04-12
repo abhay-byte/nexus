@@ -5,6 +5,7 @@ import {
   mkdir,
   readTextFile,
 } from "@tauri-apps/plugin-fs";
+import { KNOWN_AGENTS } from "../constants/agents";
 import type {
   AppSettings,
   PersistedProjects,
@@ -15,6 +16,8 @@ import type {
 const DATA_DIR = "data";
 const PROJECTS_FILE = `${DATA_DIR}/projects.json`;
 const SESSIONS_FILE = `${DATA_DIR}/sessions.json`;
+const validBuiltInAgentIds = new Set(KNOWN_AGENTS.map((agent) => agent.id));
+const removedBuiltInAgentIds = new Set(["continue", "goose", "amp"]);
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
@@ -41,6 +44,21 @@ async function ensureDataDir() {
   }
 }
 
+function sanitizeProject(project: Project): Project {
+  return {
+    ...project,
+    defaultAgents: (project.defaultAgents ?? []).filter(
+      (agentId) => !removedBuiltInAgentIds.has(agentId),
+    ),
+    mcpServers: (project.mcpServers ?? []).map((server) => ({
+      ...server,
+      enabledAgentIds: (server.enabledAgentIds ?? []).filter(
+        (agentId) => !removedBuiltInAgentIds.has(agentId),
+      ),
+    })),
+  };
+}
+
 export async function loadProjects(): Promise<Project[]> {
   await ensureDataDir();
 
@@ -57,10 +75,12 @@ export async function loadProjects(): Promise<Project[]> {
   });
 
   const parsed = JSON.parse(contents) as PersistedProjects;
-  return (parsed.projects ?? []).map((project) => ({
-    ...project,
-    mcpServers: project.mcpServers ?? [],
-  }));
+  return (parsed.projects ?? []).map((project) =>
+    sanitizeProject({
+      ...project,
+      mcpServers: project.mcpServers ?? [],
+    }),
+  );
 }
 
 export async function saveProjects(projects: Project[]) {
@@ -72,7 +92,7 @@ export async function saveProjects(projects: Project[]) {
 
   const payload: PersistedProjects = {
     version: 1,
-    projects,
+    projects: projects.map(sanitizeProject),
   };
 
   await file.write(new TextEncoder().encode(JSON.stringify(payload, null, 2)));
@@ -101,8 +121,16 @@ export async function loadSessions(): Promise<PersistedSessions | null> {
       ...DEFAULT_SETTINGS,
       ...parsed.settings,
       defaultAgentArgs: {
-        ...DEFAULT_SETTINGS.defaultAgentArgs,
-        ...(parsed.settings?.defaultAgentArgs ?? {}),
+        ...Object.fromEntries(
+          Object.entries(DEFAULT_SETTINGS.defaultAgentArgs).filter(([agentId]) =>
+            validBuiltInAgentIds.has(agentId),
+          ),
+        ),
+        ...Object.fromEntries(
+          Object.entries(parsed.settings?.defaultAgentArgs ?? {}).filter(([agentId]) =>
+            !removedBuiltInAgentIds.has(agentId),
+          ),
+        ),
       },
       customAgents: parsed.settings?.customAgents ?? [],
     },

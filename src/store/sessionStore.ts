@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { create } from "zustand";
 import { KNOWN_AGENTS } from "../constants/agents";
 import { createDefaultLayout, createPane, normalizeFractions } from "../lib/layout";
+import { buildProjectAgentLaunchOverrides } from "../lib/projectMcpSync";
 import { DEFAULT_SETTINGS, exportLogFile, loadSessions, saveSessions } from "../lib/persistence";
 import type {
   AgentConfig,
@@ -439,8 +440,10 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
     }
 
     const sessionId = nanoid();
+    const projectLaunch = buildProjectAgentLaunchOverrides(project, agent.id);
     const defaultArgs = parseArgs(get().settings.defaultAgentArgs[agent.id]);
-    const args = [...defaultArgs, ...(agent.args ?? [])];
+    const args = [...projectLaunch.args, ...defaultArgs, ...(agent.args ?? [])];
+    const env = { ...(agent.env ?? {}), ...projectLaunch.env };
 
     const session: Session = {
       id: sessionId,
@@ -452,7 +455,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       cwd: agent.cwdOverride?.trim() || project.path,
       command: agent.command,
       args,
-      env: agent.env,
+      env,
       paneId: chosenPaneId,
     };
 
@@ -500,7 +503,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
         command: spawnCommand,
         args: spawnArgs,
         cwd: remote ? "" : agent.cwdOverride?.trim() || project.path,
-        env: agent.env ?? {},
+        env,
         cols: 120,
         rows: 32,
         shellOverride: get().settings.shellOverride,

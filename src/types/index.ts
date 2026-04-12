@@ -4,8 +4,6 @@ export type AgentId =
   | "gemini-cli"
   | "aider"
   | "opencode"
-  | "goose"
-  | "amp"
   | string;
 
 export interface AgentConfig {

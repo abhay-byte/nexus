@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { nanoid } from "nanoid";
 import { KNOWN_AGENTS, PROJECT_SWATCHES } from "../../constants/agents";
+import { MCP_AUTO_INSTALL_AGENT_IDS, MCP_SERVER_PRESETS, createMcpServerFromPreset } from "../../constants/mcpPresets";
+import { getAgentMcpInstallLabel } from "../../lib/projectMcpSync";
 import type {
   AppSettings,
   InstalledAgentStatus,
@@ -166,6 +168,49 @@ function SectionHeading({ accent, label }: { accent: string; label: string }) {
       <span className="h-5 w-14 flex-shrink-0" style={{ backgroundColor: accent }} />
       <h2 className="font-headline text-4xl font-black uppercase leading-none">{label}</h2>
     </div>
+  );
+}
+
+function PresetCard({
+  title,
+  description,
+  docsUrl,
+  meta,
+  active,
+  onToggle,
+}: {
+  title: string;
+  description: string;
+  docsUrl: string;
+  meta: string;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <article className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-headline text-lg font-black uppercase leading-none">{title}</p>
+          <p className="mt-2 font-body text-sm leading-relaxed opacity-75">{description}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="shrink-0 border-4 border-[#1a1a1a] bg-[#ffcc00] px-3 py-2 font-headline text-xs font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] dark:border-[#f5f0e8]"
+        >
+          {active ? "Remove" : "Add"}
+        </button>
+      </div>
+      <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.2em] opacity-60">{meta}</p>
+      <a
+        className="mt-3 inline-block font-mono text-[11px] uppercase tracking-[0.2em] text-[#0055ff] underline underline-offset-4 dark:text-[#ffcc00]"
+        href={docsUrl}
+        rel="noreferrer"
+        target="_blank"
+      >
+        Upstream Docs
+      </a>
+    </article>
   );
 }
 
@@ -442,6 +487,15 @@ function ProjectsPanel({
     () => new Map(installedAgents.map((e) => [e.id, e.installed])),
     [installedAgents],
   );
+  const autoSyncAgentNames = useMemo(
+    () =>
+      new Map(
+        allAgents
+          .filter((agent) => MCP_AUTO_INSTALL_AGENT_IDS.includes(agent.id))
+          .map((agent) => [agent.id, agent.name]),
+      ),
+    [allAgents],
+  );
 
   const patchProject = (patch: Partial<Omit<Project, "id" | "createdAt">>) => {
     if (!selectedProject) return;
@@ -476,6 +530,36 @@ function ProjectsPanel({
           enabledAgentIds: selectedProject.defaultAgents,
         },
       ],
+    });
+  };
+
+  const addPresetServer = (presetId: string) => {
+    if (!selectedProject) return;
+    const preset = MCP_SERVER_PRESETS.find((entry) => entry.id === presetId);
+    if (!preset) return;
+
+    const nextServer = createMcpServerFromPreset(preset, selectedProject);
+    const alreadyExists = selectedProject.mcpServers.some(
+      (server) => server.name === nextServer.name && server.command === nextServer.command,
+    );
+    if (alreadyExists) {
+      return;
+    }
+
+    patchProject({
+      mcpServers: [...selectedProject.mcpServers, nextServer],
+    });
+  };
+
+  const removePresetServer = (presetId: string) => {
+    if (!selectedProject) return;
+    const preset = MCP_SERVER_PRESETS.find((entry) => entry.id === presetId);
+    if (!preset) return;
+
+    patchProject({
+      mcpServers: selectedProject.mcpServers.filter(
+        (server) => !(server.name === preset.name && server.command === preset.command),
+      ),
     });
   };
 
@@ -615,7 +699,7 @@ function ProjectsPanel({
                         key={agent.id}
                         active={isDefault}
                         label={agent.name}
-                        meta={installed ? "Installed" : "Unavailable"}
+                        meta={`${installed ? "Installed" : "Unavailable"} • ${getAgentMcpInstallLabel(agent.id)}`}
                         color={agent.color}
                         onClick={() => {
                           const nextDefaultAgents = isDefault
@@ -635,6 +719,12 @@ function ProjectsPanel({
                   <div>
                     <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">MCP Server Registry</p>
                     <p className="mt-1 font-headline text-2xl font-black uppercase leading-none">Context Bridge</p>
+                    <p className="mt-2 max-w-2xl font-body text-sm leading-relaxed opacity-70">
+                      Nexus persists MCP servers per project. For enabled <span className="font-mono">{Array.from(autoSyncAgentNames.values()).join(" + ")}</span> agents it also installs or injects the MCP wiring Nexus sessions need. Agents without an install mode stay manual.
+                    </p>
+                    <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] opacity-60">
+                      Guide: docs/agent-mcp-skills-guide.md
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -643,6 +733,43 @@ function ProjectsPanel({
                   >
                     Add MCP Server
                   </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Preset Catalog</p>
+                    <p className="mt-1 font-body text-sm leading-relaxed opacity-70">
+                      These presets come from upstream MCP documentation and are tuned for Nexus’s current stdio `command + args + env` model plus per-agent auto-install adapters.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    {MCP_SERVER_PRESETS.map((preset) => {
+                      const autoInstall = (preset.autoInstallAgents ?? [])
+                        .map((agentId) => autoSyncAgentNames.get(agentId))
+                        .filter(Boolean)
+                        .join(", ");
+                      const active = selectedProject.mcpServers.some(
+                        (server) => server.name === preset.name && server.command === preset.command,
+                      );
+                      return (
+                        <PresetCard
+                          key={preset.id}
+                          title={preset.name}
+                          description={preset.description}
+                          docsUrl={preset.docsUrl}
+                          active={active}
+                          meta={`command: ${preset.command}${autoInstall ? ` • auto-install: ${autoInstall}` : ""}`}
+                          onToggle={() => {
+                            if (active) {
+                              removePresetServer(preset.id);
+                              return;
+                            }
+                            addPresetServer(preset.id);
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {selectedProject.mcpServers.length ? (
@@ -721,11 +848,11 @@ function ProjectsPanel({
                             {allAgents.map((agent) => {
                               const enabled = server.enabledAgentIds.includes(agent.id);
                               return (
-                                <ToggleChip
+                              <ToggleChip
                                   key={`${server.id}-${agent.id}`}
                                   active={enabled}
                                   label={agent.name}
-                                  meta={agent.command}
+                                  meta={`${agent.command} • ${getAgentMcpInstallLabel(agent.id)}`}
                                   color={agent.color}
                                   onClick={() => {
                                     const enabledAgentIds = enabled
