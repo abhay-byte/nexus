@@ -9,6 +9,11 @@ use crate::{
 };
 
 fn main() {
+    // Fix HOME / XDG vars and PATH in case this process was launched from an editor
+    // or desktop launcher that overrides those to sandboxed/partial paths.
+    // Agents (codex, claude, gemini etc.) store auth tokens under the real $HOME.
+    pty::fix_home_env();
+
     tauri::Builder::default()
         .manage(AppState::default())
         .plugin(tauri_plugin_dialog::init())
