@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
@@ -34,14 +33,15 @@ export function TerminalView({
   // tearing down and recreating the terminal.
   const fitAddonRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
+  const renderedLogRef = useRef("");
+  const exitNoticeRef = useRef(false);
 
   const writeToSession = useSessionStore((state) => state.writeToSession);
   const resizeSession = useSessionStore((state) => state.resizeSession);
-  const markSessionStatus = useSessionStore((state) => state.markSessionStatus);
-  const noteSessionActivity = useSessionStore((state) => state.noteSessionActivity);
-  const appendSessionOutput = useSessionStore((state) => state.appendSessionOutput);
   const paneZoom = useSessionStore((state) => state.paneZooms[paneId] ?? 0);
   const adjustPaneZoom = useSessionStore((state) => state.adjustPaneZoom);
+  const sessionLog = useSessionStore((state) => state.sessionLogs[session.id] ?? "");
+  const sessionStatus = useSessionStore((state) => state.sessions[session.id]?.status ?? session.status);
 
   const fitVisibleTerminal = () => {
     const container = containerRef.current;
@@ -119,6 +119,14 @@ export function TerminalView({
     term.loadAddon(fitAddon);
     term.loadAddon(linksAddon);
     term.open(container);
+    const initialLog = useSessionStore.getState().sessionLogs[session.id] ?? "";
+    renderedLogRef.current = initialLog;
+    if (initialLog) {
+      term.write(initialLog, () => {
+        term.options.cursorBlink = false;
+      });
+    }
+    exitNoticeRef.current = false;
 
     // Defer the initial fit by one rAF so the container has stable dimensions.
     const initialFitRaf = requestAnimationFrame(() => {
@@ -168,29 +176,10 @@ export function TerminalView({
     };
     container.addEventListener("wheel", wheelHandler, { passive: false });
 
-    let unlistenOutput: (() => void) | undefined;
-    let unlistenExit: (() => void) | undefined;
-
-    void listen<number[]>(`pty-output:${session.id}`, (event) => {
-      const payload = new Uint8Array(event.payload);
-      term.options.cursorBlink = false;
-      term.write(payload, () => { term.options.cursorBlink = false; });
-      markSessionStatus(session.id, "running");
-      noteSessionActivity(session.id);
-      appendSessionOutput(session.id, payload);
-    }).then((dispose) => { unlistenOutput = dispose; });
-
-    void listen(`pty-exit:${session.id}`, () => {
-      markSessionStatus(session.id, "exited");
-      term.writeln("\r\n[process exited]");
-    }).then((dispose) => { unlistenExit = dispose; });
-
     return () => {
       fitAddonRef.current = null;
       termRef.current = null;
       cancelAnimationFrame(initialFitRaf);
-      unlistenOutput?.();
-      unlistenExit?.();
       disposeData.dispose();
       resizeObserver.disconnect();
       container.removeEventListener("contextmenu", onContextMenu);
@@ -200,13 +189,10 @@ export function TerminalView({
     };
   }, [
     adjustPaneZoom,
-    appendSessionOutput,
     cursorBlink,
     cursorStyle,
     fontFamily,
     fontSize,
-    markSessionStatus,
-    noteSessionActivity,
     paneId,
     paneZoom,
     resizeSession,
@@ -214,6 +200,56 @@ export function TerminalView({
     session.id,
     writeToSession,
   ]);
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) {
+      return;
+    }
+
+    const previous = renderedLogRef.current;
+    if (sessionLog === previous) {
+      return;
+    }
+
+    if (!sessionLog.startsWith(previous)) {
+      term.reset();
+      renderedLogRef.current = sessionLog;
+      if (sessionLog) {
+        term.write(sessionLog, () => {
+          term.options.cursorBlink = false;
+        });
+      }
+      return;
+    }
+
+    const delta = sessionLog.slice(previous.length);
+    renderedLogRef.current = sessionLog;
+    if (!delta) {
+      return;
+    }
+
+    term.write(delta, () => {
+      term.options.cursorBlink = false;
+    });
+  }, [sessionLog]);
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) {
+      return;
+    }
+
+    if (sessionStatus === "exited") {
+      if (!exitNoticeRef.current) {
+        term.writeln("\r\n[process exited]");
+        exitNoticeRef.current = true;
+      }
+      return;
+    }
+
+    exitNoticeRef.current = false;
+  }, [sessionStatus]);
 
   return <div className="terminal-view" ref={containerRef} />;
 }

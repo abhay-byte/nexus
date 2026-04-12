@@ -11,6 +11,7 @@ import { ProjectTabs } from "./components/ProjectTabs/ProjectTabs";
 import { AddProjectDialog } from "./components/dialogs/AddProjectDialog";
 import { AddCustomAgentDialog } from "./components/dialogs/AddCustomAgentDialog";
 import { LogSearchDialog } from "./components/dialogs/LogSearchDialog";
+import { SettingsWorkspace } from "./components/settings/SettingsWorkspace";
 import { TerminalTabBar, KANBAN_TAB_ID } from "./components/TerminalTabBar/TerminalTabBar";
 import { KanbanBoard } from "./components/Kanban/KanbanBoard";
 import { GitDiffPanel } from "./components/GitDiffPanel/GitDiffPanel";
@@ -24,42 +25,6 @@ interface GitStatusSummary {
 }
 import type { Project, SystemHealth } from "./types";
 
-function BrutalistDropdown({ value, options, onChange }: { value: string, options: {label: string, value: string}[], onChange: (val: string) => void }) {
-  const [isOpen, setIsOpen] = useState(false);
-  
-  return (
-    <div className="relative group w-full">
-      <div 
-        className="w-full border-4 border-primary dark:border-[#f5f0e8] p-4 font-mono text-lg bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] flex justify-between items-center cursor-pointer hover:bg-[#ffcc00] dark:hover:bg-[#ffcc00] dark:hover:text-[#1a1a1a] transition-none"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <span>{options.find(o => o.value === value)?.label || value}</span>
-        <span className="material-symbols-outlined pointer-events-none">expand_more</span>
-      </div>
-      
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-[80]" onClick={() => setIsOpen(false)}></div>
-          <div className="absolute top-full left-0 right-0 mt-2 border-4 border-primary dark:border-[#f5f0e8] bg-white dark:bg-[#1a1a1a] shadow-[4px_4px_0px_0px_#1a1a1a] dark:shadow-[4px_4px_0px_0px_#f5f0e8] z-[90] flex flex-col text-[#1a1a1a] dark:text-[#f5f0e8]">
-            {options.map(option => (
-              <div 
-                key={option.value}
-                className="p-4 font-mono text-lg cursor-pointer hover:bg-[#ffcc00] dark:hover:bg-[#ffcc00] dark:hover:text-[#1a1a1a] border-b-4 border-primary dark:border-[#f5f0e8] last:border-b-0 transition-none uppercase"
-                onClick={() => {
-                  onChange(option.value);
-                  setIsOpen(false);
-                }}
-              >
-                {option.label}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 function App() {
   const projects = useProjectStore((state) => state.projects);
   const openProjectIds = useProjectStore((state) => state.openProjectIds);
@@ -72,6 +37,7 @@ function App() {
   const openAddProject = useProjectStore((state) => state.openAddProject);
   const closeAddProject = useProjectStore((state) => state.closeAddProject);
   const addProject = useProjectStore((state) => state.addProject);
+  const updateProject = useProjectStore((state) => state.updateProject);
   const removeProject = useProjectStore((state) => state.removeProject);
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
   const closeProjectTab = useProjectStore((state) => state.closeProjectTab);
@@ -328,6 +294,15 @@ function App() {
     void launchAgentForProject(project, agent, paneId);
   }, [activeProject, launchAgentForProject, settings.customAgents]);
 
+  const handleRemoveProject = useCallback(async (projectId: string) => {
+    await killSessionsForProject(projectId);
+    await removeProject(projectId);
+  }, [killSessionsForProject, removeProject]);
+
+  const handleOpenProjectPath = useCallback((path: string) => {
+    void openPath(path);
+  }, []);
+
   const runningCount = Object.values(sessions).filter(
     (session) => session.status === "running" || session.status === "starting",
   ).length;
@@ -367,11 +342,11 @@ function App() {
           projectCounts={projectCounts}
           onSelectProject={setActiveProject}
           onAddProject={openAddProject}
-          onRemoveProject={removeProject}
+          onRemoveProject={handleRemoveProject}
           onOpenProject={(projectId) => {
             const project = projects.find((entry) => entry.id === projectId);
             if (project) {
-              void openPath(project.path);
+              handleOpenProjectPath(project.path);
             }
           }}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -532,225 +507,21 @@ function App() {
         />
       ) : null}
 
-      <div className={`fixed inset-0 z-[70] flex justify-end transition-all duration-300 ${settingsOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-        {/* Overlay Backdrop */}
-        <div 
-          className={`absolute inset-0 bg-[#1a1a1a]/40 dark:bg-black/80 backdrop-blur-sm transition-opacity duration-300 ${settingsOpen ? 'opacity-100' : 'opacity-0'}`} 
-          onClick={() => setSettingsOpen(false)}
-        />
-        
-        {/* Side Panel */}
-        <div className={`relative w-full max-w-xl bg-background dark:bg-[#1a1a1a] border-l-8 border-[#1a1a1a] dark:border-[#f5f0e8] h-full shadow-2xl flex flex-col transition-transform duration-300 ${settingsOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-          {/* Panel Header */}
-          <div className="p-8 border-b-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-white dark:bg-[#1a1a1a] flex justify-between items-start shrink-0">
-            <h1 className="font-headline font-black text-7xl md:text-8xl leading-none tracking-tighter text-[#1a1a1a] dark:text-[#f5f0e8]">
-              SETTINGS
-            </h1>
-            <button 
-              className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] p-2 hover:bg-[#e63b2e] hover:text-white dark:text-[#f5f0e8] transition-none active:translate-x-[2px] active:translate-y-[2px]"
-              onClick={() => setSettingsOpen(false)}
-            >
-              <span className="material-symbols-outlined font-black">close</span>
-            </button>
-          </div>
-
-          {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto p-8 space-y-12 pb-32 text-[#1a1a1a] dark:text-[#f5f0e8]">
-            
-            {/* Section: APPEARANCE */}
-            <section className="space-y-6">
-              <div className="flex items-center gap-4 text-[#1a1a1a] dark:text-[#f5f0e8]">
-                <span className="w-12 h-4 bg-[#e63b2e]"></span>
-                <h2 className="font-headline font-black text-3xl uppercase">APPEARANCE</h2>
-              </div>
-              
-              <div className="grid gap-8 border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] pl-6 ml-6">
-                
-                <div className="space-y-3">
-                  <label className="font-headline font-bold text-sm uppercase tracking-widest text-[#4a4a4a] dark:text-[#a0a0a0]">Theme</label>
-                  <BrutalistDropdown 
-                    value={settings.theme} 
-                    options={[
-                      { label: "DARK", value: "dark" }, 
-                      { label: "LIGHT", value: "light" }
-                    ]} 
-                    onChange={(val) => upsertSettings({ theme: val as "dark" | "light" })} 
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <label className="font-headline font-bold text-sm uppercase tracking-widest text-[#4a4a4a] dark:text-[#a0a0a0]">Font Family</label>
-                  <BrutalistDropdown 
-                    value={settings.fontFamily} 
-                    options={[
-                      { label: "JetBrains Mono", value: "JetBrains Mono" }, 
-                      { label: "Fira Code", value: "Fira Code" },
-                      { label: "Cascadia Code", value: "Cascadia Code" },
-                      { label: "monospace", value: "monospace" }
-                    ]} 
-                    onChange={(val) => upsertSettings({ fontFamily: val })} 
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-end">
-                    <label className="font-headline font-bold text-sm uppercase tracking-widest text-[#4a4a4a] dark:text-[#a0a0a0]">Font Size</label>
-                    <span className="font-mono font-black text-xl text-[#1a1a1a] dark:text-[#f5f0e8]">{settings.fontSize}PX</span>
-                  </div>
-                  <input 
-                    className="w-full h-8 bg-[#e8e3da] dark:bg-[#2a2a2a] border-4 border-primary dark:border-[#f5f0e8] appearance-none cursor-pointer accent-[#ffcc00] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-full [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:bg-primary dark:[&::-webkit-slider-thumb]:bg-[#f5f0e8]" 
-                    type="range" 
-                    min={11} 
-                    max={16} 
-                    value={settings.fontSize}
-                    onChange={(event) => upsertSettings({ fontSize: Number(event.target.value) })}
-                  />
-                </div>
-              </div>
-            </section>
-
-            {/* Section: TERMINAL */}
-            <section className="space-y-6">
-              <div className="flex items-center gap-4 text-[#1a1a1a] dark:text-[#f5f0e8]">
-                <span className="w-12 h-4 bg-[#0055ff]"></span>
-                <h2 className="font-headline font-black text-3xl uppercase">TERMINAL</h2>
-              </div>
-              
-              <div className="grid gap-8 border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] pl-6 ml-6">
-                
-                <div className="space-y-3">
-                  <label className="font-headline font-bold text-sm uppercase tracking-widest text-[#4a4a4a] dark:text-[#a0a0a0]">Scrollback lines</label>
-                  <input 
-                    className="w-full border-4 border-primary dark:border-[#f5f0e8] p-4 font-mono text-lg bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] focus:ring-0 focus:outline-none focus:border-[#ffcc00] dark:focus:border-[#ffcc00]" 
-                    type="number" 
-                    min={1000}
-                    max={50000}
-                    value={settings.scrollback}
-                    onChange={(event) => upsertSettings({ scrollback: Number(event.target.value) })}
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <label className="font-headline font-bold text-sm uppercase tracking-widest text-[#4a4a4a] dark:text-[#a0a0a0]">Cursor Style</label>
-                  <div className="flex flex-wrap gap-4">
-                    {(["block", "bar", "underline"] as const).map((style) => (
-                      <button 
-                        key={style}
-                        type="button"
-                        onClick={() => upsertSettings({ cursorStyle: style })}
-                        className={`border-4 border-primary dark:border-[#f5f0e8] px-6 py-2 font-headline font-black transition-none uppercase ${
-                          settings.cursorStyle === style ? 'bg-[#ffcc00] text-[#1a1a1a] dark:bg-[#ffcc00] dark:text-[#1a1a1a]' : 'bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] hover:bg-primary-container dark:hover:bg-[#2a2a2a]'
-                        }`}
-                      >
-                        {style}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="font-headline font-bold text-sm uppercase tracking-widest text-[#4a4a4a] dark:text-[#a0a0a0]">Shell Override</label>
-                  <input 
-                    className="w-full border-4 border-primary dark:border-[#f5f0e8] p-4 font-mono text-lg bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] focus:ring-0 focus:outline-none focus:border-[#ffcc00] dark:focus:border-[#ffcc00]" 
-                    type="text" 
-                    placeholder="Leave blank to auto-detect"
-                    value={settings.shellOverride}
-                    onChange={(event) => upsertSettings({ shellOverride: event.target.value })}
-                  />
-                </div>
-
-              </div>
-            </section>
-
-            {/* Section: AGENTS */}
-            <section className="space-y-6">
-              <div className="flex items-center gap-4 text-[#1a1a1a] dark:text-[#f5f0e8]">
-                <span className="w-12 h-4 bg-[#ffcc00]"></span>
-                <h2 className="font-headline font-black text-3xl uppercase">AGENTS</h2>
-              </div>
-              
-              <div className="grid gap-6 border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] pl-6 ml-6">
-                
-                <div className="p-4 border-4 border-primary dark:border-[#f5f0e8] bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8]">
-                  <div className="flex justify-between items-center mb-4">
-                    <h4 className="font-headline font-black uppercase">Claude Code</h4>
-                    <span className="material-symbols-outlined text-[#e63b2e]">smart_toy</span>
-                  </div>
-                  <label className="block font-mono text-xs mb-2 text-[#4a4a4a] dark:text-[#a0a0a0]">DEFAULT ARGS</label>
-                  <textarea 
-                    className="w-full border-2 border-primary dark:border-[#f5f0e8] p-2 font-mono text-sm bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] focus:ring-0 focus:outline-none focus:border-[#ffcc00] dark:focus:border-[#ffcc00] h-20"
-                    value={settings.defaultAgentArgs["claude-code"] ?? ""}
-                    onChange={(event) => upsertSettings({ defaultAgentArgs: { "claude-code": event.target.value } })}
-                  />
-                </div>
-
-                <div className="p-4 border-4 border-primary dark:border-[#f5f0e8] bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8]">
-                  <div className="flex justify-between items-center mb-4">
-                    <h4 className="font-headline font-black uppercase">Codex</h4>
-                    <span className="material-symbols-outlined text-[#e63b2e]">smart_toy</span>
-                  </div>
-                  <label className="block font-mono text-xs mb-2 text-[#4a4a4a] dark:text-[#a0a0a0]">DEFAULT ARGS</label>
-                  <textarea 
-                    className="w-full border-2 border-primary dark:border-[#f5f0e8] p-2 font-mono text-sm bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] focus:ring-0 focus:outline-none focus:border-[#ffcc00] dark:focus:border-[#ffcc00] h-20"
-                    value={settings.defaultAgentArgs.codex ?? ""}
-                    onChange={(event) => upsertSettings({ defaultAgentArgs: { codex: event.target.value } })}
-                  />
-                </div>
-
-              </div>
-            </section>
-
-            {/* Section: SESSION */}
-            <section className="space-y-6">
-              <div className="flex items-center gap-4 text-[#1a1a1a] dark:text-[#f5f0e8]">
-                <span className="w-12 h-4 bg-[#1a1a1a] dark:bg-[#f5f0e8]"></span>
-                <h2 className="font-headline font-black text-3xl uppercase">SESSION</h2>
-              </div>
-              
-              <div className="grid gap-8 border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] pl-6 ml-6">
-                
-                <div className="flex justify-between items-center p-4 bg-[#1a1a1a] dark:bg-[#f5f0e8] text-white dark:text-[#1a1a1a] border-4 border-primary dark:border-[#f5f0e8] cursor-pointer" onClick={() => upsertSettings({ restoreSessions: !settings.restoreSessions })}>
-                  <div>
-                    <p className="font-headline font-black uppercase">Restore on startup</p>
-                    <p className="text-xs font-mono opacity-70">Automatically reload previous terminal tabs</p>
-                  </div>
-                  <div className="w-14 h-8 bg-white border-2 border-primary dark:border-[#1a1a1a] relative">
-                    <div className={`absolute top-[2px] bottom-[2px] w-6 border-2 border-primary dark:border-[#1a1a1a] transition-all duration-200 ${settings.restoreSessions ? 'right-[2px] bg-[#ffcc00]' : 'left-[2px] bg-[#1a1a1a]'}`}></div>
-                  </div>
-                </div>
-
-                <div className="p-4 border-4 border-primary dark:border-[#f5f0e8] bg-[#e8e3da] dark:bg-[#2a2a2a] relative mt-8">
-                  <span className="absolute -top-3 left-4 bg-white dark:bg-[#1a1a1a] border-2 border-[#1a1a1a] dark:border-[#f5f0e8] px-2 font-headline font-black text-xs uppercase pt-0.5 tracking-widest text-[#1a1a1a] dark:text-[#f5f0e8]">Keybindings</span>
-                  <ul className="font-body opacity-80 list-disc pl-4 space-y-2 text-sm text-[#1a1a1a] dark:text-[#f5f0e8]">
-                    <li><kbd className="font-mono font-bold bg-[#1a1a1a] dark:bg-[#f5f0e8] text-[#00ff00] dark:text-[#008800] px-2 py-0.5 shadow-[2px_2px_0px_0px_#1a1a1a] dark:shadow-[2px_2px_0px_0px_#f5f0e8]">Ctrl+Shift+C</kbd> Copy</li>
-                    <li><kbd className="font-mono font-bold bg-[#1a1a1a] dark:bg-[#f5f0e8] text-[#00ff00] dark:text-[#008800] px-2 py-0.5 shadow-[2px_2px_0px_0px_#1a1a1a] dark:shadow-[2px_2px_0px_0px_#f5f0e8]">Ctrl+Shift+V</kbd> Paste</li>
-                    <li><kbd className="font-mono font-bold bg-[#1a1a1a] dark:bg-[#f5f0e8] text-[#00ff00] dark:text-[#008800] px-2 py-0.5 shadow-[2px_2px_0px_0px_#1a1a1a] dark:shadow-[2px_2px_0px_0px_#f5f0e8]">Ctrl+Shift+T</kbd> New pane</li>
-                    <li><kbd className="font-mono font-bold bg-[#1a1a1a] dark:bg-[#f5f0e8] text-[#00ff00] dark:text-[#008800] px-2 py-0.5 shadow-[2px_2px_0px_0px_#1a1a1a] dark:shadow-[2px_2px_0px_0px_#f5f0e8]">Ctrl+Shift+W</kbd> Close pane</li>
-                    <li><kbd className="font-mono font-bold bg-[#1a1a1a] dark:bg-[#f5f0e8] text-[#00ff00] dark:text-[#008800] px-2 py-0.5 shadow-[2px_2px_0px_0px_#1a1a1a] dark:shadow-[2px_2px_0px_0px_#f5f0e8]">Ctrl+wheel</kbd> zoom active pane</li>
-                  </ul>
-                </div>
-
-              </div>
-            </section>
-          </div>
-
-          {/* Footer Actions */}
-          <div className="p-8 border-t-8 border-[#1a1a1a] dark:border-[#f5f0e8] bg-surface-container dark:bg-[#1a1a1a] flex gap-4 shrink-0">
-            <button 
-              className="flex-1 bg-[#1a1a1a] dark:bg-[#f5f0e8] text-white dark:text-[#1a1a1a] py-6 font-headline font-black text-2xl uppercase border-4 border-[#1a1a1a] dark:border-[#f5f0e8] hover:bg-white dark:hover:bg-[#e63b2e] hover:text-[#1a1a1a] dark:hover:text-white transition-none active:translate-x-[4px] active:translate-y-[4px] active:shadow-none shadow-[6px_6px_0px_0px_#e63b2e] dark:shadow-[6px_6px_0px_0px_#ffcc00]"
-              onClick={() => setSettingsOpen(false)}
-            >
-              SAVE CHANGES
-            </button>
-            <button 
-              className="w-20 border-4 border-[#1a1a1a] dark:border-[#f5f0e8] flex items-center justify-center hover:bg-[#ffcc00] dark:hover:bg-[#ffcc00] dark:hover:text-[#1a1a1a] bg-transparent dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] transition-none"
-              onClick={() => window.location.reload()}
-            >
-              <span className="material-symbols-outlined font-black text-3xl">refresh</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <SettingsWorkspace
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        settings={settings}
+        installedAgents={installedAgents}
+        runtimeInfo={runtimeInfo}
+        onOpenAddProject={openAddProject}
+        onUpdateProject={updateProject}
+        onRemoveProject={handleRemoveProject}
+        onOpenProjectPath={handleOpenProjectPath}
+        onUpdateSettings={upsertSettings}
+        onOpenAddCustomAgent={() => setCustomAgentOpen(true)}
+      />
 
       {/* Git Diff Panel */}
       <GitDiffPanel

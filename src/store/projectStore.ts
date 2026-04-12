@@ -17,6 +17,7 @@ interface ProjectStoreState {
   openAddProject: () => void;
   closeAddProject: () => void;
   addProject: (draft: AddProjectDraft) => Promise<void>;
+  updateProject: (projectId: string, patch: Partial<Omit<Project, "id" | "createdAt">>) => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
   setActiveProject: (projectId: string) => void;
   closeProjectTab: (projectId: string) => void;
@@ -74,6 +75,7 @@ export const useProjectStore = create<ProjectStoreState>()(
         path: draft.path.trim(),
         color: draft.color || PROJECT_SWATCHES[0],
         defaultAgents: draft.defaultAgents,
+        mcpServers: draft.mcpServers ?? [],
         createdAt: Date.now(),
       };
 
@@ -91,6 +93,24 @@ export const useProjectStore = create<ProjectStoreState>()(
         error: null,
       }));
 
+      await syncProjectsToDisk(projects);
+    },
+    updateProject: async (projectId, patch) => {
+      const projects = get().projects.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              ...patch,
+              name: patch.name?.trim() ?? project.name,
+              path: patch.path?.trim() ?? project.path,
+              color: patch.color ?? project.color,
+              defaultAgents: patch.defaultAgents ?? project.defaultAgents,
+              mcpServers: patch.mcpServers ?? project.mcpServers,
+            }
+          : project,
+      );
+
+      set({ projects, error: null });
       await syncProjectsToDisk(projects);
     },
     removeProject: async (projectId) => {

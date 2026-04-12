@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { nanoid } from "nanoid";
 import { create } from "zustand";
@@ -19,6 +20,10 @@ import type {
 
 type Orientation = "horizontal" | "vertical";
 const KANBAN_TAB_ID = "__kanban__";
+const SESSION_LOG_LIMIT = 500_000;
+const sessionOutputUnlisteners = new Map<string, Promise<() => void>>();
+const sessionExitUnlisteners = new Map<string, Promise<() => void>>();
+const sessionLogDecoders = new Map<string, TextDecoder>();
 
 interface SessionStoreState {
   layouts: Record<string, ProjectLayout>;
@@ -143,6 +148,53 @@ async function invokeSafely<T>(command: string, args?: Record<string, unknown>) 
   }
 }
 
+async function ensureSessionEventBridge(sessionId: string) {
+  if (!sessionOutputUnlisteners.has(sessionId)) {
+    sessionOutputUnlisteners.set(
+      sessionId,
+      listen<number[]>(`pty-output:${sessionId}`, (event) => {
+        const payload = new Uint8Array(event.payload);
+        const store = useSessionStore.getState();
+        store.appendSessionOutput(sessionId, payload);
+        store.markSessionStatus(sessionId, "running");
+        store.noteSessionActivity(sessionId);
+      }),
+    );
+  }
+
+  if (!sessionExitUnlisteners.has(sessionId)) {
+    sessionExitUnlisteners.set(
+      sessionId,
+      listen(`pty-exit:${sessionId}`, () => {
+        useSessionStore.getState().markSessionStatus(sessionId, "exited");
+        void releaseSessionEventBridge(sessionId);
+      }),
+    );
+  }
+
+  await Promise.all([
+    sessionOutputUnlisteners.get(sessionId),
+    sessionExitUnlisteners.get(sessionId),
+  ]);
+}
+
+async function releaseSessionEventBridge(sessionId: string) {
+  const outputUnlisten = sessionOutputUnlisteners.get(sessionId);
+  const exitUnlisten = sessionExitUnlisteners.get(sessionId);
+
+  sessionOutputUnlisteners.delete(sessionId);
+  sessionExitUnlisteners.delete(sessionId);
+  sessionLogDecoders.delete(sessionId);
+
+  const [disposeOutput, disposeExit] = await Promise.all([
+    outputUnlisten ?? Promise.resolve<() => void>(() => undefined),
+    exitUnlisten ?? Promise.resolve<() => void>(() => undefined),
+  ]);
+
+  disposeOutput();
+  disposeExit();
+}
+
 export const useSessionStore = create<SessionStoreState>((set, get) => ({
   layouts: {},
   sessions: {},
@@ -261,6 +313,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       for (const session of Object.values(sessions)) {
         if (session.status === "running" || session.status === "starting") {
           try {
+            await ensureSessionEventBridge(session.id);
             await invokeSafely<string>("spawn_pty", {
               sessionId: session.id,
               command: session.command,
@@ -274,6 +327,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
 
             get().markSessionStatus(session.id, "running");
           } catch {
+            await releaseSessionEventBridge(session.id);
             get().markSessionStatus(session.id, "exited");
           }
         }
@@ -440,6 +494,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
           ]
         : args;
 
+      await ensureSessionEventBridge(sessionId);
       await invokeSafely<string>("spawn_pty", {
         sessionId,
         command: spawnCommand,
@@ -453,6 +508,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
 
       get().markSessionStatus(sessionId, "running");
     } catch (error) {
+      await releaseSessionEventBridge(sessionId);
       get().markSessionStatus(sessionId, "exited");
       set({
         error:
@@ -582,6 +638,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
     } catch {
       // Ignore backend kill failures and clean up frontend state anyway.
     }
+    await releaseSessionEventBridge(sessionId);
 
     set((state) => {
       const nextSessions = { ...state.sessions };
@@ -816,6 +873,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       path: session.cwd,
       color: "#534AB7",
       defaultAgents: [],
+      mcpServers: [],
       createdAt: Date.now(),
     } as Project;
 
@@ -835,9 +893,10 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
   },
   appendSessionOutput: (sessionId, chunk) =>
     set((state) => {
-      const decoder = new TextDecoder();
+      const decoder = sessionLogDecoders.get(sessionId) ?? new TextDecoder();
+      sessionLogDecoders.set(sessionId, decoder);
       const current = state.sessionLogs[sessionId] ?? "";
-      const next = `${current}${decoder.decode(chunk)}`.slice(-500_000);
+      const next = `${current}${decoder.decode(chunk, { stream: true })}`.slice(-SESSION_LOG_LIMIT);
       return {
         sessionLogs: {
           ...state.sessionLogs,

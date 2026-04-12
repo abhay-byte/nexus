@@ -19,12 +19,22 @@ export interface AgentConfig {
   statusColor: string;
 }
 
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  enabledAgentIds: AgentId[];
+}
+
 export interface Project {
   id: string;
   name: string;
   path: string;
   color: string;
   defaultAgents: AgentId[];
+  mcpServers: McpServerConfig[];
   createdAt: number;
 }
 
@@ -112,6 +122,7 @@ export interface AddProjectDraft {
   path: string;
   color: string;
   defaultAgents: AgentId[];
+  mcpServers: McpServerConfig[];
 }
 
 export interface InstalledAgentStatus {

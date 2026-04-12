@@ -54,7 +54,7 @@ export const KNOWN_AGENTS: AgentConfig[] = [
   {
     id: "kiro",
     name: "Kiro",
-    command: "kiro",
+    command: "kiro-cli",
     color: "#F472B6",
     statusColor: "#EC4899",
   },

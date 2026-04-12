@@ -106,6 +106,35 @@ pub fn fix_home_env() {
             }
         }
     }
+
+    // ── Step 3: unconditionally prepend well-known user bin dirs ─────────────
+    // Even if the login shell command failed (step 2), ensure ~/.local/bin,
+    // ~/.cargo/bin etc. from the *real* home are always on PATH so tools like
+    // kiro-cli, claude, aider, etc. are discoverable without needing the full
+    // login-shell PATH expansion to succeed.
+    let h = real_home.as_deref().unwrap_or("");
+    if !h.is_empty() {
+        let user_bins = [
+            format!("{h}/.local/bin"),
+            format!("{h}/.cargo/bin"),
+            format!("{h}/.npm-global/bin"),
+            format!("{h}/.yarn/bin"),
+            format!("{h}/.bun/bin"),
+            format!("{h}/go/bin"),
+            format!("{h}/.go/bin"),
+        ];
+        let cur = std::env::var("PATH").unwrap_or_default();
+        let existing: Vec<&str> = cur.split(':').collect();
+        let mut prepend: Vec<String> = user_bins
+            .iter()
+            .filter(|d| !existing.contains(&d.as_str()) && std::path::Path::new(d.as_str()).exists())
+            .cloned()
+            .collect();
+        if !prepend.is_empty() {
+            prepend.push(cur);
+            std::env::set_var("PATH", prepend.join(":"));
+        }
+    }
 }
 
 #[cfg(not(unix))]
@@ -195,12 +224,94 @@ pub fn runtime_info(shell_override: Option<String>) -> RuntimeInfo {
 
 #[tauri::command]
 pub fn detect_installed_agents(candidates: Vec<(String, String)>) -> Vec<InstalledAgentStatus> {
+    // Resolve the *real* user home directory via the OS passwd database.
+    // This is the same technique used by fix_home_env() and is necessary because
+    // editors / launchers (VS Code, Antigravity) override $HOME to a sandboxed path.
+    // We do it independently here so this command is correct even if called before
+    // the env has been fixed in a given build variant.
+    #[cfg(unix)]
+    let real_home: String = {
+        use std::ffi::CStr;
+        let uid = unsafe { libc::getuid() };
+        let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
+        let mut buf = vec![0i8; 4096];
+        let mut result: *mut libc::passwd = std::ptr::null_mut();
+        let rc = unsafe {
+            libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr(), buf.len(), &mut result)
+        };
+        if rc == 0 && !result.is_null() {
+            unsafe { CStr::from_ptr(pwd.pw_dir) }
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            // Fall back to $HOME env var if passwd lookup fails.
+            std::env::var("HOME").unwrap_or_default()
+        }
+    };
+
+    #[cfg(not(unix))]
+    let real_home: String = std::env::var("HOME").unwrap_or_default();
+
+    // Build a comprehensive list of directories to check beyond the current PATH.
+    // Covers common installation targets: pipx, npm-global, yarn, cargo, go, bun,
+    // fnm/nvm wrappers, kiro-cli, snap, and standard system paths.
+    let h = &real_home;
+    let extra_dir_strs: &[&str] = &[
+        // User-local bins (real home)
+        "/home/abhay/.local/bin", // hard-coded fallback in case passwd also fails
+        "/usr/local/bin",
+        "/usr/bin",
+        "/snap/bin",
+    ];
+    let home_relative: Vec<String> = vec![
+        format!("{h}/.local/bin"),
+        format!("{h}/.local/share/kiro-cli/bin"),
+        format!("{h}/.npm-global/bin"),
+        format!("{h}/.yarn/bin"),
+        format!("{h}/.cargo/bin"),
+        format!("{h}/.go/bin"),
+        format!("{h}/go/bin"),
+        format!("{h}/.bun/bin"),
+        format!("{h}/.fnm"),
+        format!("{h}/.nvm/versions/node"),
+    ];
+
+    let mut extra_dirs: Vec<std::path::PathBuf> = home_relative
+        .iter()
+        .map(|s| std::path::PathBuf::from(s))
+        .collect();
+
+    // Also include PATH directories from the current process environment
+    // (these were expanded by fix_home_env at startup).
+    if let Ok(path_env) = std::env::var("PATH") {
+        for segment in path_env.split(':') {
+            if !segment.is_empty() {
+                extra_dirs.push(std::path::PathBuf::from(segment));
+            }
+        }
+    }
+
+    // Append hard-coded system dirs last.
+    for s in extra_dir_strs {
+        extra_dirs.push(std::path::PathBuf::from(s));
+    }
+
     candidates
         .into_iter()
-        .map(|(id, command)| InstalledAgentStatus {
-            id,
-            installed: which(&command).is_ok(),
-            command,
+        .map(|(id, command)| {
+            // Prefer the standard `which` lookup (respects current PATH).
+            let installed = if which(&command).is_ok() {
+                true
+            } else {
+                // Exhaustive fallback: walk all candidate dirs.
+                extra_dirs.iter().any(|dir| {
+                    let full = dir.join(&command);
+                    // exists() follows symlinks; we accept any existing file-system
+                    // entry (file OR symlink to binary) that resolves successfully.
+                    full.exists()
+                })
+            };
+            InstalledAgentStatus { id, command, installed }
         })
         .collect()
 }

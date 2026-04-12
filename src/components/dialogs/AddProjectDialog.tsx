@@ -21,6 +21,7 @@ export function AddProjectDialog({
     path: "",
     color: PROJECT_SWATCHES[0],
     defaultAgents: ["claude-code", "codex"],
+    mcpServers: [],
   });
   const [submitting, setSubmitting] = useState(false);
 

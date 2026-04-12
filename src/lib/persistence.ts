@@ -57,7 +57,10 @@ export async function loadProjects(): Promise<Project[]> {
   });
 
   const parsed = JSON.parse(contents) as PersistedProjects;
-  return parsed.projects ?? [];
+  return (parsed.projects ?? []).map((project) => ({
+    ...project,
+    mcpServers: project.mcpServers ?? [],
+  }));
 }
 
 export async function saveProjects(projects: Project[]) {
