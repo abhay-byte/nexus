@@ -8,13 +8,14 @@ interface TitlebarProps {
   activeProjectId: string | null;
   openProjectIds: string[];
   projectAttention: Record<string, number>;
+  gitStatus: { count: number; branch: string } | null;
   onSelectProject: (projectId: string) => void;
   onOpenSettings: () => void;
   onOpenSearch: () => void;
   onOpenGitDiff: () => void;
 }
 
-export function Titlebar({ projects, activeProjectId, openProjectIds, projectAttention, onSelectProject, onOpenSettings, onOpenSearch, onOpenGitDiff }: TitlebarProps) {
+export function Titlebar({ projects, activeProjectId, openProjectIds, projectAttention, gitStatus, onSelectProject, onOpenSettings, onOpenSearch, onOpenGitDiff }: TitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const appWindow = getCurrentWindow();
   const runtimeInfo = useSessionStore((state) => state.runtimeInfo);
@@ -86,7 +87,21 @@ export function Titlebar({ projects, activeProjectId, openProjectIds, projectAtt
         )}
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={onOpenSearch}>search</span>
-          <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" title="Git Diff" onClick={onOpenGitDiff}>account_tree</span>
+          <div className="flex items-center">
+            {gitStatus && (
+              <span className="font-mono text-[10px] font-bold uppercase mx-2 text-[#1a1a1a]/60 dark:text-[#f5f0e8]/60 max-w-[120px] truncate" title={gitStatus.branch}>
+                {gitStatus.branch}
+              </span>
+            )}
+            <div className="relative">
+              <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" title="Git Diff" onClick={onOpenGitDiff}>account_tree</span>
+              {gitStatus != null && gitStatus.count > 0 && (
+                <span className="absolute -top-1 -right-1 bg-[#e63b2e] text-white text-[10px] font-black w-4 h-4 flex items-center justify-center border-2 border-[#1a1a1a] pointer-events-none rounded-none rounded-tr-sm">
+                  {gitStatus.count > 9 ? "9+" : gitStatus.count}
+                </span>
+              )}
+            </div>
+          </div>
           <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={onOpenSettings}>settings</span>
           
           {!isMac && (

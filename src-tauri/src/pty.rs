@@ -550,12 +550,19 @@ fn get_file_diff(cwd: &str, path: &str) -> Vec<GitDiffHunk> {
     parse_unified_diff(&combined)
 }
 
-#[tauri::command]
-pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
-    // Current branch
+fn collect_git_diff_metadata(
+    cwd: &str,
+) -> Result<
+    (
+        String,
+        std::collections::HashMap<String, (i32, i32)>,
+        std::collections::HashMap<String, String>,
+    ),
+    String,
+> {
     let branch = std::process::Command::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .current_dir(&cwd)
+        .current_dir(cwd)
         .output()
         .map_err(|e| e.to_string())
         .and_then(|o| {
@@ -567,20 +574,19 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
         })
         .unwrap_or_else(|_| "HEAD".to_string());
 
-    // Combined numstat: staged + unstaged
     let staged_numstat = std::process::Command::new("git")
         .args(["diff", "--cached", "--numstat"])
-        .current_dir(&cwd)
+        .current_dir(cwd)
         .output()
         .map_err(|e| e.to_string())?;
     let unstaged_numstat = std::process::Command::new("git")
         .args(["diff", "--numstat"])
-        .current_dir(&cwd)
+        .current_dir(cwd)
         .output()
         .map_err(|e| e.to_string())?;
 
-    // Build file map: path → (add, del, status)
-    let mut file_map: std::collections::HashMap<String, (i32, i32)> = std::collections::HashMap::new();
+    let mut file_map: std::collections::HashMap<String, (i32, i32)> =
+        std::collections::HashMap::new();
 
     let staged_text = String::from_utf8_lossy(&staged_numstat.stdout);
     for line in staged_text.lines() {
@@ -590,6 +596,7 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
             entry.1 += del;
         }
     }
+
     let unstaged_text = String::from_utf8_lossy(&unstaged_numstat.stdout);
     for line in unstaged_text.lines() {
         if let Some((path, add, del)) = parse_numstat(line) {
@@ -599,30 +606,42 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
         }
     }
 
-    // Git status for file status (M/A/D/R)
     let status_out = std::process::Command::new("git")
         .args(["status", "--porcelain=v1"])
-        .current_dir(&cwd)
+        .current_dir(cwd)
         .output()
         .map_err(|e| e.to_string())?;
     let status_text = String::from_utf8_lossy(&status_out.stdout);
     let mut status_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for line in status_text.lines() {
-        if line.len() < 3 { continue; }
+        if line.len() < 3 {
+            continue;
+        }
         let xy = &line[0..2];
         let file_part = line[3..].trim();
-        // Handle renamed "old -> new"
         let path = if file_part.contains(" -> ") {
             file_part.split(" -> ").last().unwrap_or(file_part).to_string()
         } else {
             file_part.to_string()
         };
-        let st = if xy.contains('A') { "added" }
-            else if xy.contains('D') { "deleted" }
-            else if xy.contains('R') { "renamed" }
-            else { "modified" };
+        let st = if xy.contains('A') {
+            "added"
+        } else if xy.contains('D') {
+            "deleted"
+        } else if xy.contains('R') {
+            "renamed"
+        } else {
+            "modified"
+        };
         status_map.insert(path, st.to_string());
     }
+
+    Ok((branch, file_map, status_map))
+}
+
+#[tauri::command]
+pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
+    let (branch, file_map, status_map) = collect_git_diff_metadata(&cwd)?;
 
     let mut files: Vec<GitChangedFile> = Vec::new();
     let mut total_additions = 0i32;
@@ -634,7 +653,6 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
     for path in sorted_paths {
         let (add, del) = file_map[&path];
         let status = status_map.get(&path).cloned().unwrap_or_else(|| "modified".to_string());
-        let hunks = get_file_diff(&cwd, &path);
         total_additions += add;
         total_deletions += del;
         files.push(GitChangedFile {
@@ -642,7 +660,7 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
             status,
             additions: add,
             deletions: del,
-            hunks,
+            hunks: Vec::new(),
         });
     }
 
@@ -651,6 +669,24 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
         files,
         total_additions,
         total_deletions,
+    })
+}
+
+#[tauri::command]
+pub fn git_diff_file(cwd: String, path: String) -> Result<GitChangedFile, String> {
+    let (_, file_map, status_map) = collect_git_diff_metadata(&cwd)?;
+    let (additions, deletions) = file_map.get(&path).copied().unwrap_or((0, 0));
+    let status = status_map
+        .get(&path)
+        .cloned()
+        .unwrap_or_else(|| "modified".to_string());
+
+    Ok(GitChangedFile {
+        path: path.clone(),
+        status,
+        additions,
+        deletions,
+        hunks: get_file_diff(&cwd, &path),
     })
 }
 
@@ -703,4 +739,36 @@ pub fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
+}
+
+#[derive(Serialize)]
+pub struct GitStatusSummary {
+    count: usize,
+    branch: String,
+}
+
+#[tauri::command]
+pub fn git_status_count(cwd: String) -> Result<GitStatusSummary, String> {
+    let status_out = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let status_text = String::from_utf8_lossy(&status_out.stdout);
+    let count = status_text.lines().filter(|l| l.len() >= 3).count();
+
+    let branch_out = std::process::Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(&cwd)
+        .output()
+        .unwrap_or_else(|_| std::process::Output {
+            status: Default::default(),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        });
+        
+    let branch = String::from_utf8_lossy(&branch_out.stdout).trim().to_string();
+
+    Ok(GitStatusSummary { count, branch })
 }

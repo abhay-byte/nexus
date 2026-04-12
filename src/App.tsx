@@ -17,6 +17,11 @@ import { GitDiffPanel } from "./components/GitDiffPanel/GitDiffPanel";
 import { KNOWN_AGENTS } from "./constants/agents";
 import { useProjectStore } from "./store/projectStore";
 import { useSessionStore } from "./store/sessionStore";
+
+interface GitStatusSummary {
+  count: number;
+  branch: string;
+}
 import type { Project, SystemHealth } from "./types";
 
 function BrutalistDropdown({ value, options, onChange }: { value: string, options: {label: string, value: string}[], onChange: (val: string) => void }) {
@@ -105,6 +110,9 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dismissedProjectError, setDismissedProjectError] = useState<string | null>(null);
   const [health, setHealth] = useState<SystemHealth | null>(null);
+  const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
+  const closeGitDiff = useCallback(() => setGitDiffOpen(false), []);
+  const toggleGitDiff = useCallback(() => setGitDiffOpen((open) => !open), []);
 
   useEffect(() => {
     let active = true;
@@ -177,6 +185,30 @@ function App() {
     () => projects.find((project) => project.id === activeProjectId) ?? null,
     [activeProjectId, projects],
   );
+
+  useEffect(() => {
+    if (!activeProject) {
+      setGitStatus(null);
+      return;
+    }
+    let active = true;
+    setGitStatus(null); // Clear stale count while fetching
+    const fetchStatus = async () => {
+      try {
+        const status = await invoke<GitStatusSummary>("git_status_count", { cwd: activeProject.path });
+        if (active) setGitStatus(status);
+      } catch (e) {
+        if (active) setGitStatus(null);
+      }
+    };
+    void fetchStatus();
+    // Poll every 5s. Also refetches whenever activeProject changes.
+    const timer = setInterval(() => void fetchStatus(), 5000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [activeProject]);
 
   useEffect(() => {
     if (activeProject) {
@@ -322,10 +354,11 @@ function App() {
         activeProjectId={activeProjectId}
         openProjectIds={openProjectIds}
         projectAttention={projectAttention}
+        gitStatus={gitStatus}
         onSelectProject={setActiveProject}
         onOpenSettings={() => setSettingsOpen((open) => !open)}
         onOpenSearch={() => setSearchOpen(true)}
-        onOpenGitDiff={() => setGitDiffOpen((open) => !open)}
+        onOpenGitDiff={toggleGitDiff}
       />
       <div className="flex flex-1 pt-16 overflow-hidden">
         <Sidebar
@@ -393,31 +426,30 @@ function App() {
                         onCloseTab={(tabId) => closeTerminalTab(project.id, tabId)}
                       />
 
-                      {/* Kanban board — rendered when kanban tab is active */}
-                      {activeTabId === KANBAN_TAB_ID ? (
-                        <div className="flex-1 min-h-0">
-                          <KanbanBoard projectId={project.id} projectName={project.name} />
+                      <div
+                        className="flex-1 min-h-0"
+                        style={{ display: activeTabId === KANBAN_TAB_ID ? "block" : "none" }}
+                      >
+                        <KanbanBoard projectId={project.id} projectName={project.name} />
+                      </div>
+
+                      {/* Keep every terminal tab mounted even while Kanban is visible.
+                         xterm's buffer lives in the mounted component tree, so unmounting
+                         the grid clears the visible terminal even though the PTY keeps running. */}
+                      {tabs.map((tab) => (
+                        <div
+                          key={tab.id}
+                          className="flex-1 min-h-0 relative"
+                          style={{ display: tab.id === activeTabId ? "block" : "none" }}
+                        >
+                          <PaneGrid
+                            project={project}
+                            layoutKey={tab.id}
+                            isTabActive={tab.id === activeTabId}
+                            onLaunchAgent={(agentId, paneId) => launchAgent(agentId, paneId, project)}
+                          />
                         </div>
-                      ) : (
-                        /* Terminal pane grids — each tab keeps its own grid mounted.
-                           display:none hides inactive tabs cleanly (no layout disruption).
-                           isTabActive is passed down so TerminalView can re-fit when
-                           the tab becomes visible. */
-                        tabs.map((tab) => (
-                          <div
-                            key={tab.id}
-                            className="flex-1 min-h-0 relative"
-                            style={{ display: tab.id === activeTabId ? "block" : "none" }}
-                          >
-                            <PaneGrid
-                              project={project}
-                              layoutKey={tab.id}
-                              isTabActive={tab.id === activeTabId}
-                              onLaunchAgent={(agentId, paneId) => launchAgent(agentId, paneId, project)}
-                            />
-                          </div>
-                        ))
-                      )}
+                      ))}
                     </div>
                   );
                 })}
@@ -724,7 +756,7 @@ function App() {
       <GitDiffPanel
         open={gitDiffOpen}
         project={activeProject}
-        onClose={() => setGitDiffOpen(false)}
+        onClose={closeGitDiff}
       />
 
       {searchOpen ? (

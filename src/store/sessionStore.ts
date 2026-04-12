@@ -73,17 +73,6 @@ interface SessionStoreState {
   adjustPaneZoom: (paneId: string, delta: number) => void;
 }
 
-/** Return the layout key (tabId) for the currently-active tab of a project. */
-function getActiveTabKey(state: Pick<SessionStoreState, "terminalTabs" | "activeTabIds">, projectId: string): string {
-  const tabs = state.terminalTabs[projectId];
-  const activeId = state.activeTabIds[projectId];
-  if (activeId && tabs?.some((tab) => tab.id === activeId)) {
-    return activeId;
-  }
-  // Fall back: first tab ID or projectId itself (legacy / first load)
-  return tabs?.[0]?.id ?? projectId;
-}
-
 /** Create a fresh TerminalTab for a project, with the projectId used as ID for the first one. */
 function makeTab(projectId: string, index: number, id?: string): TerminalTab {
   return {
@@ -92,6 +81,31 @@ function makeTab(projectId: string, index: number, id?: string): TerminalTab {
     label: `Terminal ${index + 1}`,
     createdAt: Date.now(),
   };
+}
+
+function getProjectTabs(
+  state: Pick<SessionStoreState, "terminalTabs">,
+  projectId: string,
+): TerminalTab[] {
+  const tabs = state.terminalTabs[projectId];
+  if (tabs?.length) {
+    return tabs;
+  }
+
+  // Recover gracefully from legacy / partially-migrated state where the UI
+  // may still have a default terminal layout but the tab metadata is missing.
+  return [makeTab(projectId, 0, projectId)];
+}
+
+/** Return the layout key (tabId) for the currently-active tab of a project. */
+function getActiveTabKey(state: Pick<SessionStoreState, "terminalTabs" | "activeTabIds">, projectId: string): string {
+  const tabs = getProjectTabs(state, projectId);
+  const activeId = state.activeTabIds[projectId];
+  if (activeId && tabs.some((tab) => tab.id === activeId)) {
+    return activeId;
+  }
+  // Fall back: first tab ID or projectId itself (legacy / first load)
+  return tabs[0]?.id ?? projectId;
 }
 
 function parseArgs(input: string | undefined) {
@@ -288,7 +302,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
 
   addTerminalTab: (projectId) =>
     set((state) => {
-      const existing = state.terminalTabs[projectId] ?? [];
+      const existing = getProjectTabs(state, projectId);
       const newTab = makeTab(projectId, existing.length);
       const newLayout = createDefaultLayout(newTab.id);
       return {
@@ -301,7 +315,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
 
   closeTerminalTab: (projectId, tabId) =>
     set((state) => {
-      const existing = state.terminalTabs[projectId] ?? [];
+      const existing = getProjectTabs(state, projectId);
       if (existing.length <= 1) return state; // can't close the last tab
       const remaining = existing.filter((tab) => tab.id !== tabId);
       const nextActiveId =
@@ -627,7 +641,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       },
     })),
   persistSnapshot: async (openProjectIds, activeProjectId) => {
-    const { layouts, sessions, settings } = get();
+    const { layouts, sessions, settings, terminalTabs, activeTabIds } = get();
     await saveSessions({
       version: 1,
       openProjects: openProjectIds,
@@ -635,6 +649,8 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       layouts,
       sessions: Object.values(sessions),
       settings,
+      terminalTabs,
+      activeTabIds,
     });
   },
   noteSessionActivity: (sessionId) =>
@@ -685,10 +701,16 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
         }
       }
 
+      const validLayoutKeys = new Set(
+        Object.entries(terminalTabs)
+          .filter(([projectId]) => validProjectIds.has(projectId))
+          .flatMap(([, tabs]) => tabs.map((tab) => tab.id)),
+      );
+
       const layouts = Object.fromEntries(
         Object.entries(state.layouts)
-          .filter(([projectId]) => validProjectIds.has(projectId))
-          .map(([projectId, layout]) => [projectId, layout]),
+          .filter(([layoutKey]) => validLayoutKeys.has(layoutKey))
+          .map(([layoutKey, layout]) => [layoutKey, layout]),
       );
 
       const sessions = Object.fromEntries(
@@ -699,8 +721,8 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       const validSessionIds = new Set(Object.keys(sessions));
 
       const activePaneIds = Object.fromEntries(
-        Object.entries(state.activePaneIds).filter(([projectId]) =>
-          validProjectIds.has(projectId),
+        Object.entries(state.activePaneIds).filter(([layoutKey]) =>
+          validLayoutKeys.has(layoutKey),
         ),
       );
 

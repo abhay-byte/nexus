@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Project } from "../../types";
 
@@ -144,7 +144,7 @@ function BranchDropdown({
 
 // ── Diff Table ───────────────────────────────────────────────────────────────
 
-function DiffView({ file }: { file: GitChangedFile }) {
+const DiffView = memo(function DiffView({ file }: { file: GitChangedFile }) {
   if (file.hunks.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
@@ -158,66 +158,72 @@ function DiffView({ file }: { file: GitChangedFile }) {
       <table className="w-full border-collapse">
         <tbody>
           {file.hunks.map((hunk, hi) => (
-            <>
-              <tr key={`hunk-${hi}`} className="bg-[#0055ff]/10 dark:bg-[#0055ff]/20">
-                <td colSpan={3} className="px-2 py-0.5 font-mono text-[10px] text-[#0055ff] dark:text-[#88aaff] font-bold border-b border-[#0055ff]/30 select-none">
-                  {hunk.header}
-                </td>
-              </tr>
-              {hunk.lines.map((line, li) => {
-                const isAdded   = line.kind === "added";
-                const isRemoved = line.kind === "removed";
-                return (
-                  <tr
-                    key={`${hi}-${li}`}
-                    className={`${
-                      isAdded   ? "bg-[#00aa55]/10 dark:bg-[#00aa55]/20" :
-                      isRemoved ? "bg-[#e63b2e]/10 dark:bg-[#e63b2e]/20" :
-                                  "bg-white dark:bg-[#1a1a1a]"
-                    }`}
-                  >
-                    {/* Old line */}
-                    <td className={`w-8 text-center text-[10px] select-none border-r border-[#1a1a1a]/10 dark:border-[#f5f0e8]/10 ${
-                      isRemoved ? "text-[#e63b2e] font-bold bg-[#e63b2e]/20 dark:bg-[#e63b2e]/30" : "text-[#1a1a1a]/30 dark:text-[#f5f0e8]/30"
-                    }`}>
-                      {line.old_line ?? ""}
-                    </td>
-                    {/* New line */}
-                    <td className={`w-8 text-center text-[10px] select-none border-r border-[#1a1a1a]/10 dark:border-[#f5f0e8]/10 ${
-                      isAdded ? "text-[#00aa55] font-bold bg-[#00aa55]/20 dark:bg-[#00aa55]/30" : "text-[#1a1a1a]/30 dark:text-[#f5f0e8]/30"
-                    }`}>
-                      {line.new_line ?? ""}
-                    </td>
-                    {/* Content */}
-                    <td className={`pl-2 pr-4 py-0.5 whitespace-pre-wrap break-all ${
-                      isAdded   ? "text-[#1a4a1a] dark:text-[#aaffaa]" :
-                      isRemoved ? "text-[#4a1a1a] dark:text-[#ffaaaa]" :
-                                  "text-[#1a1a1a] dark:text-[#f5f0e8]"
-                    }`}>
-                      <span className={`mr-2 select-none font-bold ${isAdded ? "text-[#00aa55]" : isRemoved ? "text-[#e63b2e]" : "opacity-0"}`}>
-                        {isAdded ? "+" : isRemoved ? "−" : "+"}
-                      </span>
-                      {line.content}
-                    </td>
-                  </tr>
-                );
-              })}
-            </>
+            <tr key={`group-${hi}`}>
+              <td className="p-0" colSpan={3}>
+                <table className="w-full border-collapse">
+                  <tbody>
+                    <tr className="bg-[#0055ff]/10 dark:bg-[#0055ff]/20">
+                      <td colSpan={3} className="px-2 py-0.5 font-mono text-[10px] text-[#0055ff] dark:text-[#88aaff] font-bold border-b border-[#0055ff]/30 select-none">
+                        {hunk.header}
+                      </td>
+                    </tr>
+                    {hunk.lines.map((line, li) => {
+                      const isAdded   = line.kind === "added";
+                      const isRemoved = line.kind === "removed";
+                      return (
+                        <tr
+                          key={`${hi}-${li}`}
+                          className={`${
+                            isAdded   ? "bg-[#00aa55]/10 dark:bg-[#00aa55]/20" :
+                            isRemoved ? "bg-[#e63b2e]/10 dark:bg-[#e63b2e]/20" :
+                                        "bg-white dark:bg-[#1a1a1a]"
+                          }`}
+                        >
+                          <td className={`w-8 text-center text-[10px] select-none border-r border-[#1a1a1a]/10 dark:border-[#f5f0e8]/10 ${
+                            isRemoved ? "text-[#e63b2e] font-bold bg-[#e63b2e]/20 dark:bg-[#e63b2e]/30" : "text-[#1a1a1a]/30 dark:text-[#f5f0e8]/30"
+                          }`}>
+                            {line.old_line ?? ""}
+                          </td>
+                          <td className={`w-8 text-center text-[10px] select-none border-r border-[#1a1a1a]/10 dark:border-[#f5f0e8]/10 ${
+                            isAdded ? "text-[#00aa55] font-bold bg-[#00aa55]/20 dark:bg-[#00aa55]/30" : "text-[#1a1a1a]/30 dark:text-[#f5f0e8]/30"
+                          }`}>
+                            {line.new_line ?? ""}
+                          </td>
+                          <td className={`pl-2 pr-4 py-0.5 whitespace-pre-wrap break-all ${
+                            isAdded   ? "text-[#1a4a1a] dark:text-[#aaffaa]" :
+                            isRemoved ? "text-[#4a1a1a] dark:text-[#ffaaaa]" :
+                                        "text-[#1a1a1a] dark:text-[#f5f0e8]"
+                          }`}>
+                            <span className={`mr-2 select-none font-bold ${isAdded ? "text-[#00aa55]" : isRemoved ? "text-[#e63b2e]" : "opacity-0"}`}>
+                              {isAdded ? "+" : isRemoved ? "−" : "+"}
+                            </span>
+                            {line.content}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
           ))}
         </tbody>
       </table>
     </div>
   );
-}
+});
 
 // ── Main Panel ───────────────────────────────────────────────────────────────
 
-export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
+export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
   const [diffResult, setDiffResult] = useState<GitDiffResult | null>(null);
   const [branches, setBranches] = useState<GitBranch[]>([]);
-  const [selectedFile, setSelectedFile] = useState<GitChangedFile | null>(null);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [fileDetails, setFileDetails] = useState<Record<string, GitChangedFile>>({});
   const [loading, setLoading] = useState(false);
+  const [fileLoading, setFileLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
 
   const fetchDiff = useCallback(async () => {
@@ -231,14 +237,15 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
       ]);
       setDiffResult(result);
       setBranches(branchList);
-      // Auto-select first file
+      setFileDetails({});
+      setFileError(null);
       if (result.files.length > 0) {
-        setSelectedFile((prev) => {
-          const stillExists = result.files.find((f) => f.path === prev?.path);
-          return stillExists ?? result.files[0];
+        setSelectedFilePath((prev) => {
+          const stillExists = result.files.find((f) => f.path === prev);
+          return stillExists?.path ?? result.files[0].path;
         });
       } else {
-        setSelectedFile(null);
+        setSelectedFilePath(null);
       }
     } catch (e) {
       setError(String(e));
@@ -246,6 +253,38 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
       setLoading(false);
     }
   }, [project]);
+
+  useEffect(() => {
+    if (!open || !project || !selectedFilePath || fileDetails[selectedFilePath]) {
+      return;
+    }
+
+    let cancelled = false;
+    setFileLoading(true);
+    setFileError(null);
+
+    void invoke<GitChangedFile>("git_diff_file", { cwd: project.path, path: selectedFilePath })
+      .then((file) => {
+        if (cancelled) {
+          return;
+        }
+        setFileDetails((prev) => ({ ...prev, [file.path]: file }));
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setFileError(String(e));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setFileLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fileDetails, open, project, selectedFilePath]);
 
   // Refresh on open or project change
   useEffect(() => {
@@ -268,10 +307,15 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
   };
 
   const currentBranch = diffResult?.branch ?? branches.find((b) => b.current)?.name ?? "main";
+  const selectedFileSummary = useMemo(
+    () => diffResult?.files.find((file) => file.path === selectedFilePath) ?? null,
+    [diffResult, selectedFilePath],
+  );
+  const selectedFile = selectedFilePath ? fileDetails[selectedFilePath] ?? selectedFileSummary : null;
 
   return (
     <div
-      className={`fixed inset-0 z-[70] flex justify-end transition-all duration-300 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
+      className={`fixed inset-0 z-[70] flex justify-start transition-all duration-300 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
     >
       {/* Backdrop */}
       <div
@@ -281,10 +325,10 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
 
       {/* Panel */}
       <div
-        className={`relative w-full max-w-3xl bg-[#f5f0e8] dark:bg-[#0e0e0e] border-l-8 border-[#1a1a1a] dark:border-[#f5f0e8] h-full shadow-2xl flex flex-col transition-transform duration-300 ${open ? "translate-x-0" : "translate-x-full"}`}
+        className={`relative w-full max-w-4xl bg-[#f5f0e8] dark:bg-[#0e0e0e] border-r-8 border-[#1a1a1a] dark:border-[#f5f0e8] h-full shadow-2xl flex flex-col transition-transform duration-300 ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
         {/* ── Panel Header ─────────────────────────────────────────────────── */}
-        <div className="p-6 border-b-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#ffcc00] dark:bg-[#ffcc00] flex justify-between items-start shrink-0">
+        <div className="p-6 border-b-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#ffcc00] dark:bg-[#ffcc00] flex justify-between items-start shrink-0 text-[#1a1a1a]">
           <div className="flex-1 min-w-0">
             <h1 className="font-['Space_Grotesk'] font-black text-5xl leading-none tracking-tighter text-[#1a1a1a] uppercase mb-2">
               DIFF_VIEW
@@ -315,7 +359,7 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
 
               {/* Refresh */}
               <button
-                className="flex items-center gap-1 border-2 border-[#1a1a1a] px-2 py-1 font-mono text-xs font-bold bg-transparent hover:bg-[#1a1a1a] hover:text-[#ffcc00] transition-none disabled:opacity-50"
+                className="flex items-center gap-1 border-2 border-[#1a1a1a] dark:border-[#1a1a1a] text-[#1a1a1a] px-2 py-1 font-mono text-xs font-bold bg-transparent hover:bg-[#1a1a1a] hover:text-[#ffcc00] transition-none disabled:opacity-50"
                 onClick={() => void fetchDiff()}
                 disabled={loading}
                 title="Refresh"
@@ -328,7 +372,7 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
           </div>
 
           <button
-            className="border-4 border-[#1a1a1a] p-2 bg-white hover:bg-[#e63b2e] hover:text-white transition-none active:translate-x-[2px] active:translate-y-[2px] shrink-0 ml-4"
+            className="border-4 border-[#1a1a1a] p-2 bg-white text-[#1a1a1a] hover:bg-[#e63b2e] hover:text-white transition-none active:translate-x-[2px] active:translate-y-[2px] shrink-0 ml-4"
             onClick={onClose}
           >
             <span className="material-symbols-outlined font-black">close</span>
@@ -358,8 +402,8 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
           </div>
         ) : !diffResult || diffResult.files.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-            <div className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] p-6 bg-white dark:bg-[#1a1a1a]">
-              <span className="material-symbols-outlined text-5xl text-[#1a1a1a] dark:text-[#f5f0e8]">check_circle</span>
+            <div className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] p-6 bg-[#ffcc00] dark:bg-[#ffcc00] shadow-[4px_4px_0px_0px_#1a1a1a] dark:shadow-[4px_4px_0px_0px_#f5f0e8]">
+              <span className="material-symbols-outlined text-5xl text-[#1a1a1a] dark:text-[#1a1a1a]">check_circle</span>
             </div>
             <p className="font-['Space_Grotesk'] font-black text-2xl uppercase text-[#1a1a1a] dark:text-[#f5f0e8]">
               Working tree clean
@@ -382,7 +426,7 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
                   return (
                     <div
                       key={file.path}
-                      onClick={() => setSelectedFile(file)}
+                      onClick={() => setSelectedFilePath(file.path)}
                       className={`px-3 py-3 border-b-2 border-[#1a1a1a] dark:border-[#f5f0e8] flex justify-between items-start cursor-pointer transition-none ${
                         active
                           ? "bg-[#ffcc00] text-[#1a1a1a]"
@@ -424,7 +468,22 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
                       </span>
                     </div>
                   </div>
-                  <DiffView file={selectedFile} />
+                  {fileError && !fileDetails[selectedFile.path] ? (
+                    <div className="flex-1 flex items-center justify-center p-8 text-center">
+                      <p className="font-mono text-xs text-[#e63b2e] dark:text-[#ff8888] border-4 border-[#e63b2e] p-4">
+                        {fileError}
+                      </p>
+                    </div>
+                  ) : fileLoading && !fileDetails[selectedFile.path] ? (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                      <span className="material-symbols-outlined text-4xl animate-spin text-[#1a1a1a] dark:text-[#f5f0e8]">sync</span>
+                      <p className="font-mono text-xs uppercase tracking-wide dark:text-[#f5f0e8]">
+                        Loading file diff…
+                      </p>
+                    </div>
+                  ) : (
+                    <DiffView file={selectedFile} />
+                  )}
                 </>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-[#1a1a1a]/30 dark:text-[#f5f0e8]/30 font-mono text-sm">
@@ -467,4 +526,4 @@ export function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
       </div>
     </div>
   );
-}
+});
