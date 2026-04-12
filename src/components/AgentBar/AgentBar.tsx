@@ -59,7 +59,7 @@ export function AgentBar({
                 type="button"
               >
                 <span
-                  className="w-2 h-2 rounded-full border border-[#1a1a1a] shrink-0 animate-pulse"
+                  className="w-2 h-2 rounded-full border border-[#1a1a1a] shrink-0"
                   style={{ background: agent?.color ?? "#ffcc00" }}
                 />
                 {agent?.name ?? session.agentId}

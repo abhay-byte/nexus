@@ -15,6 +15,8 @@ interface TerminalViewProps {
   scrollback: number;
   cursorStyle: "block" | "bar" | "underline";
   cursorBlink: boolean;
+  /** True when the parent terminal tab is currently visible. */
+  isTabActive: boolean;
 }
 
 export function TerminalView({
@@ -25,8 +27,14 @@ export function TerminalView({
   scrollback,
   cursorStyle,
   cursorBlink,
+  isTabActive,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Held across renders so the tab-switch effect can call fit() without
+  // tearing down and recreating the terminal.
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const termRef = useRef<Terminal | null>(null);
+
   const writeToSession = useSessionStore((state) => state.writeToSession);
   const resizeSession = useSessionStore((state) => state.resizeSession);
   const markSessionStatus = useSessionStore((state) => state.markSessionStatus);
@@ -35,11 +43,26 @@ export function TerminalView({
   const paneZoom = useSessionStore((state) => state.paneZooms[paneId] ?? 0);
   const adjustPaneZoom = useSessionStore((state) => state.adjustPaneZoom);
 
+  // ── Re-fit when this tab becomes active ─────────────────────────────────
+  // Runs whenever isTabActive flips. When it becomes true the container has
+  // just been un-hidden (display:none → block), so we wait one rAF for
+  // layout to settle then call fit() and sync the PTY dimensions.
+  useEffect(() => {
+    if (!isTabActive) return;
+    const raf = requestAnimationFrame(() => {
+      const fitAddon = fitAddonRef.current;
+      const term = termRef.current;
+      if (!fitAddon || !term) return;
+      fitAddon.fit();
+      void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [isTabActive, resizeSession, session.id]);
+
+  // ── Main terminal setup ──────────────────────────────────────────────────
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) {
-      return;
-    }
+    if (!container) return;
 
     const term = new Terminal({
       convertEol: false,
@@ -80,16 +103,18 @@ export function TerminalView({
         brightWhite: "#ffffff",
       },
     });
+
     const fitAddon = new FitAddon();
     const linksAddon = new WebLinksAddon();
+
+    fitAddonRef.current = fitAddon;
+    termRef.current = term;
 
     term.loadAddon(fitAddon);
     term.loadAddon(linksAddon);
     term.open(container);
 
-    // Defer the first fit by one animation frame so the container has finished
-    // layout (avoids the "half size on first render" issue when the tab is
-    // switching from visibility:hidden → visible).
+    // Defer the initial fit by one rAF so the container has stable dimensions.
     const initialFitRaf = requestAnimationFrame(() => {
       fitAddon.fit();
       void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
@@ -99,24 +124,7 @@ export function TerminalView({
       fitAddon.fit();
       void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
     });
-
     resizeObserver.observe(container);
-
-    // Re-fit whenever this terminal becomes visible again (tab switch).
-    // IntersectionObserver fires when the element transitions from off-screen /
-    // hidden to visible — at that point the container size is correct.
-    const intersectionObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          requestAnimationFrame(() => {
-            fitAddon.fit();
-            void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
-          });
-        }
-      }
-    }, { threshold: 0.01 });
-
-    intersectionObserver.observe(container);
 
     const disposeData = term.onData((data) => {
       void writeToSession(session.id, new TextEncoder().encode(data));
@@ -124,19 +132,15 @@ export function TerminalView({
 
     term.attachCustomKeyEventHandler((event) => {
       if (event.type === "keydown" && event.ctrlKey && event.shiftKey && event.code === "KeyC") {
-        if (term.hasSelection()) {
-          void navigator.clipboard.writeText(term.getSelection());
-        }
+        if (term.hasSelection()) void navigator.clipboard.writeText(term.getSelection());
         return false;
       }
-
       if (event.type === "keydown" && event.ctrlKey && event.shiftKey && event.code === "KeyV") {
         void navigator.clipboard.readText().then((text) => {
           void writeToSession(session.id, new TextEncoder().encode(text));
         });
         return false;
       }
-
       return true;
     });
 
@@ -146,19 +150,15 @@ export function TerminalView({
         void writeToSession(session.id, new TextEncoder().encode(text));
       });
     };
-
     container.addEventListener("contextmenu", onContextMenu);
 
     const mouseUp = () => {
-      if (term.hasSelection()) {
-        void navigator.clipboard.writeText(term.getSelection());
-      }
+      if (term.hasSelection()) void navigator.clipboard.writeText(term.getSelection());
     };
     container.addEventListener("mouseup", mouseUp);
+
     const wheelHandler = (event: WheelEvent) => {
-      if (!event.ctrlKey) {
-        return;
-      }
+      if (!event.ctrlKey) return;
       event.preventDefault();
       adjustPaneZoom(paneId, event.deltaY < 0 ? 1 : -1);
     };
@@ -169,34 +169,26 @@ export function TerminalView({
 
     void listen<number[]>(`pty-output:${session.id}`, (event) => {
       const payload = new Uint8Array(event.payload);
-      
       term.options.cursorBlink = false;
-      
-      term.write(payload, () => {
-        term.options.cursorBlink = false;
-      });
-      
+      term.write(payload, () => { term.options.cursorBlink = false; });
       markSessionStatus(session.id, "running");
       noteSessionActivity(session.id);
       appendSessionOutput(session.id, payload);
-    }).then((dispose) => {
-      unlistenOutput = dispose;
-    });
+    }).then((dispose) => { unlistenOutput = dispose; });
 
     void listen(`pty-exit:${session.id}`, () => {
       markSessionStatus(session.id, "exited");
       term.writeln("\r\n[process exited]");
-    }).then((dispose) => {
-      unlistenExit = dispose;
-    });
+    }).then((dispose) => { unlistenExit = dispose; });
 
     return () => {
+      fitAddonRef.current = null;
+      termRef.current = null;
       cancelAnimationFrame(initialFitRaf);
       unlistenOutput?.();
       unlistenExit?.();
       disposeData.dispose();
       resizeObserver.disconnect();
-      intersectionObserver.disconnect();
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("mouseup", mouseUp);
       container.removeEventListener("wheel", wheelHandler);

@@ -397,25 +397,19 @@ function App() {
                         </div>
                       ) : (
                         /* Terminal pane grids — each tab keeps its own grid mounted.
-                           IMPORTANT: use visibility:hidden not display:none so that
-                           xterm.js containers retain their layout dimensions even when
-                           inactive. display:none collapses the container to 0px which
-                           makes FitAddon miscalculate cols/rows on the next show. */
+                           display:none hides inactive tabs cleanly (no layout disruption).
+                           isTabActive is passed down so TerminalView can re-fit when
+                           the tab becomes visible. */
                         tabs.map((tab) => (
                           <div
                             key={tab.id}
                             className="flex-1 min-h-0 relative"
-                            style={{
-                              visibility: tab.id === activeTabId ? "visible" : "hidden",
-                              pointerEvents: tab.id === activeTabId ? "auto" : "none",
-                              position: tab.id === activeTabId ? "relative" : "absolute",
-                              inset: tab.id === activeTabId ? undefined : 0,
-                            }}
-                            aria-hidden={tab.id !== activeTabId}
+                            style={{ display: tab.id === activeTabId ? "block" : "none" }}
                           >
                             <PaneGrid
                               project={project}
                               layoutKey={tab.id}
+                              isTabActive={tab.id === activeTabId}
                               onLaunchAgent={(agentId, paneId) => launchAgent(agentId, paneId, project)}
                             />
                           </div>

@@ -10,6 +10,7 @@ interface PaneProps {
   attention: boolean;
   session: Session | null;
   customAgents: AgentConfig[];
+  isTabActive: boolean;
   onFocus: () => void;
   onLaunchAgent: (agentId: string, paneId: string) => void;
 }
@@ -21,6 +22,7 @@ export function Pane({
   attention,
   session,
   customAgents,
+  isTabActive,
   onFocus,
   onLaunchAgent,
 }: PaneProps) {
@@ -42,7 +44,7 @@ export function Pane({
     <section
       className={`flex-1 min-h-0 bg-white dark:bg-[#121212] border-4 flex flex-col neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8] group relative overflow-hidden transition-all ${
         active ? "border-[#ffcc00]" : "border-[#1a1a1a] dark:border-[#f5f0e8]"
-      } ${attention ? "animate-pulse" : ""}`}
+      } ${attention ? "border-[#ffcc00]" : ""}`}
       onClick={onFocus}
     >
       <header className={`bg-[#f5f0e8] dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] border-b-4 border-[#1a1a1a] dark:border-[#f5f0e8] px-3 py-1 flex justify-between items-center z-10 font-['Space_Grotesk'] uppercase font-bold text-xs shrink-0 ${active && !session ? "bg-[#ffcc00] dark:bg-[#ffcc00] !text-[#1a1a1a]" : ""}`}>
@@ -102,6 +104,7 @@ export function Pane({
               scrollback={settings.scrollback}
               cursorStyle={settings.cursorStyle}
               cursorBlink={settings.cursorBlink}
+              isTabActive={isTabActive}
             />
           </div>
         ) : (

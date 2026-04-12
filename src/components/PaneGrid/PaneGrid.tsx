@@ -8,10 +8,12 @@ interface PaneGridProps {
   project: Project | null;
   /** The active terminal tab's ID — used as the key into layouts and activePaneIds. */
   layoutKey: string;
+  /** True when this tab is currently visible. Used to re-fit xterm after tab switch. */
+  isTabActive: boolean;
   onLaunchAgent: (agentId: string, paneId?: string) => void;
 }
 
-export function PaneGrid({ project, layoutKey, onLaunchAgent }: PaneGridProps) {
+export function PaneGrid({ project, layoutKey, isTabActive, onLaunchAgent }: PaneGridProps) {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const layouts = useSessionStore((state) => state.layouts);
   const sessions = useSessionStore((state) => state.sessions);
@@ -104,6 +106,7 @@ export function PaneGrid({ project, layoutKey, onLaunchAgent }: PaneGridProps) {
               attention={paneAttention[pane.id] ?? false}
               session={pane.sessionId ? sessions[pane.sessionId] ?? null : null}
               customAgents={customAgents}
+              isTabActive={isTabActive}
               onFocus={() => focusPane(project.id, pane.id)}
               onLaunchAgent={onLaunchAgent}
             />
