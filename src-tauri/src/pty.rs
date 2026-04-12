@@ -414,3 +414,293 @@ pub fn kill_pty(session_id: String, state: State<'_, AppState>) -> Result<(), St
     let mut child = session.child.lock().map_err(|error| error.to_string())?;
     child.kill().map_err(|error| error.to_string())
 }
+
+// ─── Git diff structures ────────────────────────────────────────────────────
+
+#[derive(Serialize, Clone)]
+pub struct GitDiffLine {
+    pub old_line: Option<u32>,
+    pub new_line: Option<u32>,
+    pub kind: String, // "context" | "added" | "removed"
+    pub content: String,
+}
+
+#[derive(Serialize, Clone)]
+pub struct GitDiffHunk {
+    pub header: String,
+    pub lines: Vec<GitDiffLine>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct GitChangedFile {
+    pub path: String,
+    pub status: String, // "modified" | "added" | "deleted" | "renamed"
+    pub additions: i32,
+    pub deletions: i32,
+    pub hunks: Vec<GitDiffHunk>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct GitDiffResult {
+    pub branch: String,
+    pub files: Vec<GitChangedFile>,
+    pub total_additions: i32,
+    pub total_deletions: i32,
+}
+
+/// Parse `git diff --numstat` line: "<add>\t<del>\t<file>"
+fn parse_numstat(line: &str) -> Option<(String, i32, i32)> {
+    let parts: Vec<&str> = line.splitn(3, '\t').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let add = parts[0].trim().parse::<i32>().unwrap_or(0);
+    let del = parts[1].trim().parse::<i32>().unwrap_or(0);
+    let file = parts[2].trim().to_string();
+    Some((file, add, del))
+}
+
+/// Parse unified diff output into hunks
+fn parse_unified_diff(diff_text: &str) -> Vec<GitDiffHunk> {
+    let mut hunks: Vec<GitDiffHunk> = Vec::new();
+    let mut current_hunk: Option<GitDiffHunk> = None;
+    let mut old_line: u32 = 1;
+    let mut new_line: u32 = 1;
+
+    for line in diff_text.lines() {
+        if line.starts_with("@@") {
+            if let Some(hunk) = current_hunk.take() {
+                hunks.push(hunk);
+            }
+            // Parse @@ -old_start,old_count +new_start,new_count @@ ...
+            let parts: Vec<&str> = line.splitn(5, ' ').collect();
+            if parts.len() >= 3 {
+                let old_info = parts[1].trim_start_matches('-');
+                let new_info = parts[2].trim_start_matches('+');
+                old_line = old_info.split(',').next().unwrap_or("1").parse().unwrap_or(1);
+                new_line = new_info.split(',').next().unwrap_or("1").parse().unwrap_or(1);
+            }
+            current_hunk = Some(GitDiffHunk {
+                header: line.to_string(),
+                lines: Vec::new(),
+            });
+        } else if let Some(ref mut hunk) = current_hunk {
+            if line.starts_with('-') && !line.starts_with("---") {
+                hunk.lines.push(GitDiffLine {
+                    old_line: Some(old_line),
+                    new_line: None,
+                    kind: "removed".to_string(),
+                    content: line[1..].to_string(),
+                });
+                old_line += 1;
+            } else if line.starts_with('+') && !line.starts_with("+++") {
+                hunk.lines.push(GitDiffLine {
+                    old_line: None,
+                    new_line: Some(new_line),
+                    kind: "added".to_string(),
+                    content: line[1..].to_string(),
+                });
+                new_line += 1;
+            } else if !line.starts_with("---") && !line.starts_with("+++") {
+                hunk.lines.push(GitDiffLine {
+                    old_line: Some(old_line),
+                    new_line: Some(new_line),
+                    kind: "context".to_string(),
+                    content: if line.starts_with(' ') { line[1..].to_string() } else { line.to_string() },
+                });
+                old_line += 1;
+                new_line += 1;
+            }
+        }
+    }
+    if let Some(hunk) = current_hunk {
+        hunks.push(hunk);
+    }
+    hunks
+}
+
+/// Get full diff for a specific file (combined staged + unstaged)
+fn get_file_diff(cwd: &str, path: &str) -> Vec<GitDiffHunk> {
+    // Try staged diff first
+    let staged = std::process::Command::new("git")
+        .args(["diff", "--cached", "--unified=3", "--", path])
+        .current_dir(cwd)
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .unwrap_or_default();
+
+    let unstaged = std::process::Command::new("git")
+        .args(["diff", "--unified=3", "--", path])
+        .current_dir(cwd)
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .unwrap_or_default();
+
+    // Merge: if file appears in both, combine hunks; else use whichever has content
+    let combined = if !staged.is_empty() && !unstaged.is_empty() {
+        format!("{}\n{}", staged, unstaged)
+    } else if !staged.is_empty() {
+        staged
+    } else {
+        unstaged
+    };
+
+    parse_unified_diff(&combined)
+}
+
+#[tauri::command]
+pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
+    // Current branch
+    let branch = std::process::Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| e.to_string())
+        .and_then(|o| {
+            if o.status.success() {
+                Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                Ok("HEAD".to_string())
+            }
+        })
+        .unwrap_or_else(|_| "HEAD".to_string());
+
+    // Combined numstat: staged + unstaged
+    let staged_numstat = std::process::Command::new("git")
+        .args(["diff", "--cached", "--numstat"])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let unstaged_numstat = std::process::Command::new("git")
+        .args(["diff", "--numstat"])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    // Build file map: path → (add, del, status)
+    let mut file_map: std::collections::HashMap<String, (i32, i32)> = std::collections::HashMap::new();
+
+    let staged_text = String::from_utf8_lossy(&staged_numstat.stdout);
+    for line in staged_text.lines() {
+        if let Some((path, add, del)) = parse_numstat(line) {
+            let entry = file_map.entry(path).or_insert((0, 0));
+            entry.0 += add;
+            entry.1 += del;
+        }
+    }
+    let unstaged_text = String::from_utf8_lossy(&unstaged_numstat.stdout);
+    for line in unstaged_text.lines() {
+        if let Some((path, add, del)) = parse_numstat(line) {
+            let entry = file_map.entry(path).or_insert((0, 0));
+            entry.0 += add;
+            entry.1 += del;
+        }
+    }
+
+    // Git status for file status (M/A/D/R)
+    let status_out = std::process::Command::new("git")
+        .args(["status", "--porcelain=v1"])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let status_text = String::from_utf8_lossy(&status_out.stdout);
+    let mut status_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for line in status_text.lines() {
+        if line.len() < 3 { continue; }
+        let xy = &line[0..2];
+        let file_part = line[3..].trim();
+        // Handle renamed "old -> new"
+        let path = if file_part.contains(" -> ") {
+            file_part.split(" -> ").last().unwrap_or(file_part).to_string()
+        } else {
+            file_part.to_string()
+        };
+        let st = if xy.contains('A') { "added" }
+            else if xy.contains('D') { "deleted" }
+            else if xy.contains('R') { "renamed" }
+            else { "modified" };
+        status_map.insert(path, st.to_string());
+    }
+
+    let mut files: Vec<GitChangedFile> = Vec::new();
+    let mut total_additions = 0i32;
+    let mut total_deletions = 0i32;
+
+    let mut sorted_paths: Vec<String> = file_map.keys().cloned().collect();
+    sorted_paths.sort();
+
+    for path in sorted_paths {
+        let (add, del) = file_map[&path];
+        let status = status_map.get(&path).cloned().unwrap_or_else(|| "modified".to_string());
+        let hunks = get_file_diff(&cwd, &path);
+        total_additions += add;
+        total_deletions += del;
+        files.push(GitChangedFile {
+            path,
+            status,
+            additions: add,
+            deletions: del,
+            hunks,
+        });
+    }
+
+    Ok(GitDiffResult {
+        branch,
+        files,
+        total_additions,
+        total_deletions,
+    })
+}
+
+#[derive(Serialize, Clone)]
+pub struct GitBranch {
+    pub name: String,
+    pub current: bool,
+    pub remote: bool,
+}
+
+#[tauri::command]
+pub fn git_branches(cwd: String) -> Result<Vec<GitBranch>, String> {
+    let output = std::process::Command::new("git")
+        .args(["branch", "-a", "--format=%(refname:short)|%(HEAD)"])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut branches: Vec<GitBranch> = text.lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            let parts: Vec<&str> = l.splitn(2, '|').collect();
+            let name = parts[0].trim().to_string();
+            let current = parts.get(1).map(|s| s.trim() == "*").unwrap_or(false);
+            let remote = name.starts_with("remotes/");
+            GitBranch { name, current, remote }
+        })
+        .collect();
+
+    branches.sort_by(|a, b| {
+        b.current.cmp(&a.current)
+            .then(a.remote.cmp(&b.remote))
+            .then(a.name.cmp(&b.name))
+    });
+
+    Ok(branches)
+}
+
+#[tauri::command]
+pub fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
+    let output = std::process::Command::new("git")
+        .args(["checkout", &branch])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}

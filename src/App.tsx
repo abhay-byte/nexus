@@ -13,6 +13,7 @@ import { AddCustomAgentDialog } from "./components/dialogs/AddCustomAgentDialog"
 import { LogSearchDialog } from "./components/dialogs/LogSearchDialog";
 import { TerminalTabBar, KANBAN_TAB_ID } from "./components/TerminalTabBar/TerminalTabBar";
 import { KanbanBoard } from "./components/Kanban/KanbanBoard";
+import { GitDiffPanel } from "./components/GitDiffPanel/GitDiffPanel";
 import { KNOWN_AGENTS } from "./constants/agents";
 import { useProjectStore } from "./store/projectStore";
 import { useSessionStore } from "./store/sessionStore";
@@ -98,6 +99,7 @@ function App() {
   const closeTerminalTab = useSessionStore((state) => state.closeTerminalTab);
   const setActiveTerminalTab = useSessionStore((state) => state.setActiveTerminalTab);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [gitDiffOpen, setGitDiffOpen] = useState(false);
   const [customAgentOpen, setCustomAgentOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -323,6 +325,7 @@ function App() {
         onSelectProject={setActiveProject}
         onOpenSettings={() => setSettingsOpen((open) => !open)}
         onOpenSearch={() => setSearchOpen(true)}
+        onOpenGitDiff={() => setGitDiffOpen((open) => !open)}
       />
       <div className="flex flex-1 pt-16 overflow-hidden">
         <Sidebar
@@ -716,6 +719,13 @@ function App() {
           </div>
         </div>
       </div>
+
+      {/* Git Diff Panel */}
+      <GitDiffPanel
+        open={gitDiffOpen}
+        project={activeProject}
+        onClose={() => setGitDiffOpen(false)}
+      />
 
       {searchOpen ? (
         <LogSearchDialog

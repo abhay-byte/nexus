@@ -11,9 +11,10 @@ interface TitlebarProps {
   onSelectProject: (projectId: string) => void;
   onOpenSettings: () => void;
   onOpenSearch: () => void;
+  onOpenGitDiff: () => void;
 }
 
-export function Titlebar({ projects, activeProjectId, openProjectIds, projectAttention, onSelectProject, onOpenSettings, onOpenSearch }: TitlebarProps) {
+export function Titlebar({ projects, activeProjectId, openProjectIds, projectAttention, onSelectProject, onOpenSettings, onOpenSearch, onOpenGitDiff }: TitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const appWindow = getCurrentWindow();
   const runtimeInfo = useSessionStore((state) => state.runtimeInfo);
@@ -85,6 +86,7 @@ export function Titlebar({ projects, activeProjectId, openProjectIds, projectAtt
         )}
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={onOpenSearch}>search</span>
+          <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" title="Git Diff" onClick={onOpenGitDiff}>account_tree</span>
           <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={onOpenSettings}>settings</span>
           
           {!isMac && (
