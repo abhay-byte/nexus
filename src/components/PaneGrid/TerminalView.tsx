@@ -86,9 +86,14 @@ export function TerminalView({
     term.loadAddon(fitAddon);
     term.loadAddon(linksAddon);
     term.open(container);
-    fitAddon.fit();
 
-    void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+    // Defer the first fit by one animation frame so the container has finished
+    // layout (avoids the "half size on first render" issue when the tab is
+    // switching from visibility:hidden → visible).
+    const initialFitRaf = requestAnimationFrame(() => {
+      fitAddon.fit();
+      void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+    });
 
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
@@ -96,6 +101,22 @@ export function TerminalView({
     });
 
     resizeObserver.observe(container);
+
+    // Re-fit whenever this terminal becomes visible again (tab switch).
+    // IntersectionObserver fires when the element transitions from off-screen /
+    // hidden to visible — at that point the container size is correct.
+    const intersectionObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          requestAnimationFrame(() => {
+            fitAddon.fit();
+            void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+          });
+        }
+      }
+    }, { threshold: 0.01 });
+
+    intersectionObserver.observe(container);
 
     const disposeData = term.onData((data) => {
       void writeToSession(session.id, new TextEncoder().encode(data));
@@ -170,10 +191,12 @@ export function TerminalView({
     });
 
     return () => {
+      cancelAnimationFrame(initialFitRaf);
       unlistenOutput?.();
       unlistenExit?.();
       disposeData.dispose();
       resizeObserver.disconnect();
+      intersectionObserver.disconnect();
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("mouseup", mouseUp);
       container.removeEventListener("wheel", wheelHandler);

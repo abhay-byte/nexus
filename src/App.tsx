@@ -396,12 +396,22 @@ function App() {
                           <KanbanBoard projectId={project.id} projectName={project.name} />
                         </div>
                       ) : (
-                        /* Terminal pane grids — each tab keeps its own grid mounted */
+                        /* Terminal pane grids — each tab keeps its own grid mounted.
+                           IMPORTANT: use visibility:hidden not display:none so that
+                           xterm.js containers retain their layout dimensions even when
+                           inactive. display:none collapses the container to 0px which
+                           makes FitAddon miscalculate cols/rows on the next show. */
                         tabs.map((tab) => (
                           <div
                             key={tab.id}
                             className="flex-1 min-h-0 relative"
-                            style={{ display: tab.id === activeTabId ? "block" : "none" }}
+                            style={{
+                              visibility: tab.id === activeTabId ? "visible" : "hidden",
+                              pointerEvents: tab.id === activeTabId ? "auto" : "none",
+                              position: tab.id === activeTabId ? "relative" : "absolute",
+                              inset: tab.id === activeTabId ? undefined : 0,
+                            }}
+                            aria-hidden={tab.id !== activeTabId}
                           >
                             <PaneGrid
                               project={project}

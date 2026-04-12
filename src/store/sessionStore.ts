@@ -573,18 +573,27 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       const nextLogs = { ...state.sessionLogs };
       delete nextLogs[sessionId];
 
+      // Find which layout actually contains this session (could be any tab key,
+      // not necessarily the projectId). Searching all layouts prevents the bug
+      // where killing a session on Tab 1 (keyed by projectId) accidentally
+      // cleared the pane on a different tab.
+      const nextLayouts = { ...state.layouts };
+      for (const [layoutKey, layout] of Object.entries(nextLayouts)) {
+        if (layout.panes.some((pane) => pane.sessionId === sessionId)) {
+          nextLayouts[layoutKey] = {
+            ...layout,
+            panes: layout.panes.map((pane) =>
+              pane.sessionId === sessionId ? { ...pane, sessionId: null } : pane,
+            ),
+          };
+          break;
+        }
+      }
+
       return {
         sessions: nextSessions,
         sessionLogs: nextLogs,
-        layouts: {
-          ...state.layouts,
-          [projectId]: {
-            ...state.layouts[projectId],
-            panes: state.layouts[projectId].panes.map((pane) =>
-              pane.sessionId === sessionId ? { ...pane, sessionId: null } : pane,
-            ),
-          },
-        },
+        layouts: nextLayouts,
         paneAttention: closedSession
           ? {
               ...state.paneAttention,
