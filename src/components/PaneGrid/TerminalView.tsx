@@ -43,6 +43,16 @@ export function TerminalView({
   const paneZoom = useSessionStore((state) => state.paneZooms[paneId] ?? 0);
   const adjustPaneZoom = useSessionStore((state) => state.adjustPaneZoom);
 
+  const fitVisibleTerminal = () => {
+    const container = containerRef.current;
+    const fitAddon = fitAddonRef.current;
+    const term = termRef.current;
+    if (!container || !fitAddon || !term || !isTabActive) return;
+    if (container.clientWidth < 16 || container.clientHeight < 16) return;
+    fitAddon.fit();
+    void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+  };
+
   // ── Re-fit when this tab becomes active ─────────────────────────────────
   // Runs whenever isTabActive flips. When it becomes true the container has
   // just been un-hidden (display:none → block), so we wait one rAF for
@@ -50,11 +60,7 @@ export function TerminalView({
   useEffect(() => {
     if (!isTabActive) return;
     const raf = requestAnimationFrame(() => {
-      const fitAddon = fitAddonRef.current;
-      const term = termRef.current;
-      if (!fitAddon || !term) return;
-      fitAddon.fit();
-      void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+      fitVisibleTerminal();
     });
     return () => cancelAnimationFrame(raf);
   }, [isTabActive, resizeSession, session.id]);
@@ -116,13 +122,11 @@ export function TerminalView({
 
     // Defer the initial fit by one rAF so the container has stable dimensions.
     const initialFitRaf = requestAnimationFrame(() => {
-      fitAddon.fit();
-      void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+      fitVisibleTerminal();
     });
 
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
-      void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+      fitVisibleTerminal();
     });
     resizeObserver.observe(container);
 

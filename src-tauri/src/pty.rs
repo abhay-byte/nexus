@@ -4,11 +4,16 @@ use serde::Serialize;
 use std::{
     collections::HashMap,
     io::{Read, Write},
+    path::Path,
     sync::Arc,
     thread,
 };
 use tauri::{AppHandle, Emitter, State};
 use which::which;
+
+fn shell_escape(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
 
 /// Called once at startup, before the Tauri builder runs.
 ///
@@ -157,6 +162,25 @@ fn default_shell(shell_override: Option<String>) -> String {
     }
 }
 
+fn shell_wrap_command(shell: &str, command: &str, args: &[String]) -> (String, Vec<String>) {
+    let mut parts = Vec::with_capacity(args.len() + 1);
+    parts.push(shell_escape(command));
+    for arg in args {
+        parts.push(shell_escape(arg));
+    }
+
+    let shell_name = Path::new(shell)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(shell);
+
+    if shell_name == "fish" {
+        (shell.to_string(), vec!["-lc".to_string(), parts.join(" ")])
+    } else {
+        (shell.to_string(), vec!["-lc".to_string(), parts.join(" ")])
+    }
+}
+
 #[tauri::command]
 pub fn runtime_info(shell_override: Option<String>) -> RuntimeInfo {
     RuntimeInfo {
@@ -194,6 +218,20 @@ pub async fn spawn_pty(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    let is_qwen = command == "qwen";
+    let chosen_shell = default_shell(shell_override.clone());
+    if is_qwen {
+        eprintln!(
+            "[nexus:qwen] spawn cwd='{}' cols={} rows={} shell_override='{}' TERM='{}' COLORTERM='{}' LANG='{}'",
+            cwd,
+            cols,
+            rows,
+            shell_override.clone().unwrap_or_default(),
+            std::env::var("TERM").unwrap_or_default(),
+            std::env::var("COLORTERM").unwrap_or_default(),
+            std::env::var("LANG").unwrap_or_default(),
+        );
+    }
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -204,17 +242,21 @@ pub async fn spawn_pty(
         })
         .map_err(|error| error.to_string())?;
 
-    let mut builder = CommandBuilder::new(if command.trim().is_empty() {
-        default_shell(shell_override)
+    let (spawn_command, spawn_args) = if command.trim().is_empty() {
+        (chosen_shell.clone(), Vec::new())
+    } else if is_qwen {
+        shell_wrap_command(&chosen_shell, &command, &args)
     } else {
-        command
-    });
+        (command, args)
+    };
+
+    let mut builder = CommandBuilder::new(spawn_command);
 
     if !cwd.trim().is_empty() {
         builder.cwd(cwd);
     }
 
-    for arg in args {
+    for arg in spawn_args {
         builder.arg(arg);
     }
 
@@ -230,6 +272,14 @@ pub async fn spawn_pty(
     builder.env("COLORTERM", "truecolor");
     builder.env("LANG",
         std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".to_string()));
+
+    if is_qwen {
+        eprintln!(
+            "[nexus:qwen] builder TERM='xterm-256color' COLORTERM='truecolor' HOME='{}' XDG_CONFIG_HOME='{}'",
+            std::env::var("HOME").unwrap_or_default(),
+            std::env::var("XDG_CONFIG_HOME").unwrap_or_default(),
+        );
+    }
 
     // --- Force correct HOME / XDG vars into every PTY child ----------------
     // Re-assert these so nothing from the frontend env HashMap can override them
