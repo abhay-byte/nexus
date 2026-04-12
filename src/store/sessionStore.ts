@@ -18,6 +18,7 @@ import type {
 } from "../types";
 
 type Orientation = "horizontal" | "vertical";
+const KANBAN_TAB_ID = "__kanban__";
 
 interface SessionStoreState {
   layouts: Record<string, ProjectLayout>;
@@ -208,8 +209,10 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       if (!terminalTabs[project.id]) {
         // First load or legacy data: create one default tab using projectId as its ID
         terminalTabs[project.id] = [{ id: project.id, projectId: project.id, label: "Terminal 1", createdAt: Date.now() }];
-        activeTabIds[project.id] = project.id;
+        activeTabIds[project.id] = KANBAN_TAB_ID;
         // The layout keyed by projectId is already compatible — no rename needed
+      } else if (!activeTabIds[project.id]) {
+        activeTabIds[project.id] = KANBAN_TAB_ID;
       }
     }
 
@@ -669,6 +672,19 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
   syncProjects: (projects) =>
     set((state) => {
       const validProjectIds = new Set(projects.map((project) => project.id));
+      const terminalTabs = { ...state.terminalTabs };
+      const activeTabIds = { ...state.activeTabIds };
+
+      for (const project of projects) {
+        if (!terminalTabs[project.id]?.length) {
+          terminalTabs[project.id] = [{ id: project.id, projectId: project.id, label: "Terminal 1", createdAt: Date.now() }];
+        }
+
+        if (!activeTabIds[project.id]) {
+          activeTabIds[project.id] = KANBAN_TAB_ID;
+        }
+      }
+
       const layouts = Object.fromEntries(
         Object.entries(state.layouts)
           .filter(([projectId]) => validProjectIds.has(projectId))
@@ -719,6 +735,12 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
         layouts,
         sessions,
         activePaneIds,
+        terminalTabs: Object.fromEntries(
+          Object.entries(terminalTabs).filter(([projectId]) => validProjectIds.has(projectId)),
+        ),
+        activeTabIds: Object.fromEntries(
+          Object.entries(activeTabIds).filter(([projectId]) => validProjectIds.has(projectId)),
+        ),
         paneAttention,
         projectAttention,
         initializedProjects,

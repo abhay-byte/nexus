@@ -24,9 +24,10 @@ die()     { echo -e "${RED}✗${RESET} $*" >&2; exit 1; }
 # ── constants ─────────────────────────────────────────────────────
 REPO_URL="https://github.com/abhay-byte/nexus.git"
 APP_NAME="nexus"
+XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 INSTALL_DIR="$HOME/.local/bin"
-ICONS_DIR="$HOME/.local/share/icons"
-DESKTOP_DIR="$HOME/.local/share/applications"
+ICONS_DIR="$XDG_DATA_HOME/icons"
+DESKTOP_DIR="$XDG_DATA_HOME/applications"
 TMP_DIR=""
 
 # ── detect distro pkg manager ─────────────────────────────────────
@@ -165,6 +166,8 @@ build_app() {
 # ── install ───────────────────────────────────────────────────────
 install_app() {
   info "Installing to ${BOLD}${INSTALL_DIR}/${APP_NAME}${RESET}…"
+  local icon_name="nexus-terminal"
+  local icon_theme_dir="$ICONS_DIR/hicolor/512x512/apps"
   mkdir -p "$INSTALL_DIR"
   cp "$BINARY" "$INSTALL_DIR/$APP_NAME"
   chmod +x "$INSTALL_DIR/$APP_NAME"
@@ -172,21 +175,22 @@ install_app() {
   # Desktop entry + icon
   local icon_src="$REPO_DIR/src-tauri/icons/icon.png"
   if [ -f "$icon_src" ]; then
-    mkdir -p "$ICONS_DIR" "$DESKTOP_DIR"
-    cp "$icon_src" "$ICONS_DIR/nexus.png"
+    mkdir -p "$icon_theme_dir" "$DESKTOP_DIR"
+    cp "$icon_src" "$icon_theme_dir/${icon_name}.png"
     cat > "$DESKTOP_DIR/nexus-terminal.desktop" <<EOF
 [Desktop Entry]
 Name=Nexus Terminal
 GenericName=AI Agent Terminal
 Comment=Multi-agent AI terminal workspace
 Exec=${INSTALL_DIR}/${APP_NAME}
-Icon=${ICONS_DIR}/nexus.png
+Icon=${icon_name}
 Type=Application
 Categories=Development;TerminalEmulator;
 Keywords=terminal;ai;agent;claude;codex;gemini;
 StartupNotify=true
 StartupWMClass=Nexus
 EOF
+    gtk-update-icon-cache -q -t "$ICONS_DIR/hicolor" 2>/dev/null || true
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
     success "Desktop entry created."
   fi
