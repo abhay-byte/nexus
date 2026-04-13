@@ -40,7 +40,39 @@
 
 ## Install
 
-### ⚡ One-line install (no manual setup required)
+### 📦 Download pre-built binary (recommended)
+
+Grab the latest release from the [**GitHub Releases page**](https://github.com/abhay-byte/nexus/releases/latest):
+
+| Platform | Architecture | File to download |
+|---|---|---|
+| 🐧 Linux | x86_64 | `nexus_*_amd64.AppImage` or `nexus_*_amd64.deb` |
+| 🪟 Windows | x86_64 | `nexus_*_x64-setup.exe` or `nexus_*_x64_en-US.msi` |
+| 🪟 Windows | ARM64 | `nexus_*_arm64-setup.exe` or `nexus_*_arm64_en-US.msi` |
+
+#### Linux — AppImage
+
+```bash
+chmod +x nexus_*.AppImage
+./nexus_*.AppImage
+```
+
+> For system-wide availability you can move it to `~/.local/bin/nexus` and run `nexus` anywhere.
+
+#### Linux — .deb (Debian / Ubuntu)
+
+```bash
+sudo dpkg -i nexus_*_amd64.deb
+nexus
+```
+
+#### Windows — Installer (x86_64 or ARM64)
+
+Run the downloaded `.exe` or `.msi` installer and follow the wizard. Nexus will appear in the Start menu after installation.
+
+---
+
+### ⚡ One-line install — build from source (Linux only)
 
 Paste this in your terminal. It automatically installs system libraries, Rust, Node.js, and Nexus itself:
 
@@ -67,7 +99,7 @@ nexus
 
 ---
 
-### Manual install (from cloned repo)
+### 🔧 Manual install (from cloned repo)
 
 If you already have Node.js ≥ 18 and Rust + Cargo installed:
 
