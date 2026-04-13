@@ -4,7 +4,10 @@ import { nanoid } from "nanoid";
 import { create } from "zustand";
 import { KNOWN_AGENTS } from "../constants/agents";
 import { createDefaultLayout, createPane, normalizeFractions } from "../lib/layout";
-import { buildProjectAgentLaunchOverrides } from "../lib/projectMcpSync";
+import {
+  buildProjectAgentLaunchOverrides,
+  migrateLegacyProjectMcpServers,
+} from "../lib/projectMcpSync";
 import { DEFAULT_SETTINGS, exportLogFile, loadSessions, saveSessions } from "../lib/persistence";
 import type {
   AgentConfig,
@@ -22,9 +25,12 @@ import type {
 type Orientation = "horizontal" | "vertical";
 const KANBAN_TAB_ID = "__kanban__";
 const SESSION_LOG_LIMIT = 500_000;
+const SESSION_LOG_FLUSH_MS = 48;
 const sessionOutputUnlisteners = new Map<string, Promise<() => void>>();
 const sessionExitUnlisteners = new Map<string, Promise<() => void>>();
 const sessionLogDecoders = new Map<string, TextDecoder>();
+const pendingSessionLogText = new Map<string, string>();
+const pendingSessionLogFlushTimers = new Map<string, number>();
 
 interface SessionStoreState {
   layouts: Record<string, ProjectLayout>;
@@ -141,6 +147,28 @@ function shellEscape(value: string) {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
+function getBrowserOsLabel() {
+  const platform = navigator.platform.toLowerCase();
+  if (platform.includes("win")) {
+    return "windows";
+  }
+  if (platform.includes("mac")) {
+    return "macos";
+  }
+  if (platform.includes("linux") || platform.includes("x11")) {
+    return "linux";
+  }
+  return navigator.platform || "desktop";
+}
+
+function getRuntimeShellFallback(shellOverride: string) {
+  const value = shellOverride.trim();
+  if (value) {
+    return value.split(/[\\/]/).pop() || value;
+  }
+  return "auto";
+}
+
 async function invokeSafely<T>(command: string, args?: Record<string, unknown>) {
   try {
     return await invoke<T>(command, args);
@@ -186,6 +214,12 @@ async function releaseSessionEventBridge(sessionId: string) {
   sessionOutputUnlisteners.delete(sessionId);
   sessionExitUnlisteners.delete(sessionId);
   sessionLogDecoders.delete(sessionId);
+  const pendingFlush = pendingSessionLogFlushTimers.get(sessionId);
+  if (pendingFlush !== undefined) {
+    window.clearTimeout(pendingFlush);
+    pendingSessionLogFlushTimers.delete(sessionId);
+  }
+  pendingSessionLogText.delete(sessionId);
 
   const [disposeOutput, disposeExit] = await Promise.all([
     outputUnlisten ?? Promise.resolve<() => void>(() => undefined),
@@ -196,6 +230,54 @@ async function releaseSessionEventBridge(sessionId: string) {
   disposeExit();
 }
 
+function flushPendingSessionOutput(sessionId: string) {
+  const pending = pendingSessionLogText.get(sessionId);
+  const flushTimer = pendingSessionLogFlushTimers.get(sessionId);
+  if (flushTimer !== undefined) {
+    window.clearTimeout(flushTimer);
+    pendingSessionLogFlushTimers.delete(sessionId);
+  }
+
+  if (!pending) {
+    pendingSessionLogText.delete(sessionId);
+    return;
+  }
+
+  pendingSessionLogText.delete(sessionId);
+  useSessionStore.setState((state) => {
+    const current = state.sessionLogs[sessionId] ?? "";
+    const next = `${current}${pending}`.slice(-SESSION_LOG_LIMIT);
+    return {
+      sessionLogs: {
+        ...state.sessionLogs,
+        [sessionId]: next,
+      },
+    };
+  });
+}
+
+function queueSessionOutput(sessionId: string, text: string) {
+  if (!text) {
+    return;
+  }
+
+  pendingSessionLogText.set(sessionId, `${pendingSessionLogText.get(sessionId) ?? ""}${text}`);
+  if (pendingSessionLogFlushTimers.has(sessionId)) {
+    return;
+  }
+
+  const timer = window.setTimeout(() => {
+    flushPendingSessionOutput(sessionId);
+  }, SESSION_LOG_FLUSH_MS);
+  pendingSessionLogFlushTimers.set(sessionId, timer);
+}
+
+function flushAllPendingSessionOutput() {
+  for (const sessionId of Array.from(pendingSessionLogText.keys())) {
+    flushPendingSessionOutput(sessionId);
+  }
+}
+
 export const useSessionStore = create<SessionStoreState>((set, get) => ({
   layouts: {},
   sessions: {},
@@ -204,8 +286,8 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
   activeTabIds: {},
   installedAgents: [],
   runtimeInfo: {
-    shell: "shell",
-    os: "desktop",
+    shell: "auto",
+    os: getBrowserOsLabel(),
   },
   settings: DEFAULT_SETTINGS,
   paneAttention: {},
@@ -221,13 +303,21 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
     }
 
     const persisted = await loadSessions();
-    const settings = persisted?.settings ?? DEFAULT_SETTINGS;
+    const persistedSettings = persisted?.settings ?? DEFAULT_SETTINGS;
+    const migratedMcpServers =
+      persistedSettings.mcpServers.length > 0
+        ? persistedSettings.mcpServers
+        : migrateLegacyProjectMcpServers(projects);
+    const settings = {
+      ...persistedSettings,
+      mcpServers: migratedMcpServers,
+    };
     const candidatePairs = KNOWN_AGENTS.map((agent) => [agent.id, agent.command] as [string, string]);
 
     let installedAgents: InstalledAgentStatus[] = [];
     let runtimeInfo: RuntimeInfo = {
-      shell: "shell",
-      os: navigator.platform || "desktop",
+      shell: getRuntimeShellFallback(settings.shellOverride),
+      os: getBrowserOsLabel(),
     };
 
     try {
@@ -248,8 +338,8 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       });
     } catch {
       runtimeInfo = {
-        shell: settings.shellOverride || "shell",
-        os: navigator.platform || "desktop",
+        shell: getRuntimeShellFallback(settings.shellOverride),
+        os: getBrowserOsLabel(),
       };
     }
 
@@ -440,7 +530,11 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
     }
 
     const sessionId = nanoid();
-    const projectLaunch = buildProjectAgentLaunchOverrides(project, agent.id);
+    const projectLaunch = await buildProjectAgentLaunchOverrides(
+      project,
+      agent.id,
+      get().settings.mcpServers,
+    );
     const defaultArgs = parseArgs(get().settings.defaultAgentArgs[agent.id]);
     const args = [...projectLaunch.args, ...defaultArgs, ...(agent.args ?? [])];
     const env = { ...(agent.env ?? {}), ...projectLaunch.env };
@@ -895,19 +989,13 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
     await get().launchAgent(project, agent, session.paneId);
   },
   appendSessionOutput: (sessionId, chunk) =>
-    set((state) => {
+    {
       const decoder = sessionLogDecoders.get(sessionId) ?? new TextDecoder();
       sessionLogDecoders.set(sessionId, decoder);
-      const current = state.sessionLogs[sessionId] ?? "";
-      const next = `${current}${decoder.decode(chunk, { stream: true })}`.slice(-SESSION_LOG_LIMIT);
-      return {
-        sessionLogs: {
-          ...state.sessionLogs,
-          [sessionId]: next,
-        },
-      };
-    }),
+      queueSessionOutput(sessionId, decoder.decode(chunk, { stream: true }));
+    },
   searchLogs: (query) => {
+    flushAllPendingSessionOutput();
     const value = query.trim().toLowerCase();
     if (!value) {
       return [];
@@ -930,6 +1018,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       .filter((result) => result.matches.length > 0);
   },
   exportSessionLog: async (sessionId) => {
+    flushPendingSessionOutput(sessionId);
     const session = get().sessions[sessionId];
     if (!session) {
       return null;

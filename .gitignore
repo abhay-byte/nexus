@@ -36,3 +36,5 @@ WKWebView*
 
 # Stitch design files (design only, not needed in repo)
 stitch/
+node-compile-cache/
+node-compile-cache

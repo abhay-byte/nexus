@@ -1,12 +1,15 @@
-import { MCP_AUTO_INSTALL_AGENT_IDS } from "../lib/projectMcpSync";
-import type { AgentId, McpServerConfig, Project } from "../types";
+import {
+  MCP_AUTO_INSTALL_AGENT_IDS,
+  PROJECT_PATH_PLACEHOLDER,
+} from "../lib/projectMcpSync";
+import type { AgentId, McpServerConfig } from "../types";
 
 export interface McpServerPreset {
   id: string;
   name: string;
   description: string;
   command: string;
-  args: (project: Project) => string[];
+  args: string[];
   env?: Record<string, string>;
   docsUrl: string;
   recommendedAgents: AgentId[];
@@ -40,7 +43,7 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
     name: "context-mode",
     description: "Context window protection and indexed search tools for long coding sessions.",
     command: "context-mode",
-    args: () => [],
+    args: [],
     docsUrl: "https://github.com/mksglu/context-mode",
     recommendedAgents: ["codex", "claude-code", "gemini-cli", "kiro", "junie", "cline", "opencode"],
     autoInstallAgents: autoInstallAgents([
@@ -62,7 +65,7 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
     name: "context7",
     description: "Up-to-date library and API documentation via Context7 MCP.",
     command: "npx",
-    args: () => ["-y", "@upstash/context7-mcp"],
+    args: ["-y", "@upstash/context7-mcp"],
     env: {
       CONTEXT7_API_KEY: "",
     },
@@ -79,7 +82,7 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
     name: "playwright",
     description: "Browser automation and UI debugging with Playwright MCP.",
     command: "npx",
-    args: () => ["-y", "@playwright/mcp@latest"],
+    args: ["-y", "@playwright/mcp@latest"],
     docsUrl: "https://github.com/microsoft/playwright-mcp",
     recommendedAgents: GENERIC_MCP_AGENT_IDS,
     autoInstallAgents: autoInstallAgents(GENERIC_MCP_AGENT_IDS),
@@ -92,7 +95,7 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
     name: "github",
     description: "GitHub's official MCP server using the published container image.",
     command: "docker",
-    args: () => [
+    args: [
       "run",
       "-i",
       "--rm",
@@ -114,9 +117,9 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
   {
     id: "filesystem",
     name: "filesystem",
-    description: "Official filesystem MCP server scoped to the selected project root.",
+    description: "Official filesystem MCP server scoped to each project's root path.",
     command: "npx",
-    args: (project) => ["-y", "@modelcontextprotocol/server-filesystem", project.path],
+    args: ["-y", "@modelcontextprotocol/server-filesystem", PROJECT_PATH_PLACEHOLDER],
     docsUrl: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
     recommendedAgents: GENERIC_MCP_AGENT_IDS,
     autoInstallAgents: autoInstallAgents(GENERIC_MCP_AGENT_IDS),
@@ -129,7 +132,7 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
     name: "sequential-thinking",
     description: "Official structured reasoning MCP server for reflective, stepwise problem solving.",
     command: "npx",
-    args: () => ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+    args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
     docsUrl: "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
     recommendedAgents: GENERIC_MCP_AGENT_IDS,
     autoInstallAgents: autoInstallAgents(GENERIC_MCP_AGENT_IDS),
@@ -139,7 +142,7 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
     name: "android-mcp",
     description: "Android device and emulator control over ADB.",
     command: "uvx",
-    args: () => ["--python", "3.13", "android-mcp"],
+    args: ["--python", "3.13", "android-mcp"],
     docsUrl: "https://github.com/CursorTouch/Android-MCP",
     recommendedAgents: GENERIC_MCP_AGENT_IDS,
     autoInstallAgents: autoInstallAgents(GENERIC_MCP_AGENT_IDS),
@@ -152,16 +155,13 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
 
 export function createMcpServerFromPreset(
   preset: McpServerPreset,
-  project: Project,
 ): McpServerConfig {
   return {
-    id: `mcp-${preset.id}-${project.id}`,
+    id: `mcp-${preset.id}`,
     name: preset.name,
     command: preset.command,
-    args: preset.args(project),
+    args: [...preset.args],
     env: preset.env ? { ...preset.env } : {},
-    enabledAgentIds: preset.recommendedAgents.filter((agentId) =>
-      preset.autoInstallAgents?.includes(agentId) || project.defaultAgents.includes(agentId),
-    ),
+    enabledAgentIds: [...(preset.autoInstallAgents ?? preset.recommendedAgents)],
   };
 }

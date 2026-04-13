@@ -3,16 +3,37 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
 use std::{
     collections::HashMap,
+    fs,
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
+    process::Command,
     sync::Arc,
     thread,
 };
 use tauri::{AppHandle, Emitter, State};
 use which::which;
 
+const CAVEMAN_REPO: &str = "https://github.com/JuliusBrussee/caveman";
+const SPEC_KIT_REPO: &str = "git+https://github.com/github/spec-kit.git";
+const AGENCY_AGENTS_REPO: &str = "https://github.com/msitarzewski/agency-agents.git";
+const AGENCY_AGENT_DEST_RELATIVE_PATH: &str = "AGENCY.md";
+const AGENCY_AGENT_MANIFEST_RELATIVE_PATH: &str = ".nexus/agency-agents.json";
+const LEGACY_AGENCY_AGENT_DEST_RELATIVE_PATH: &str = ".nexus/agency-agent.md";
+const NEXUS_MANAGED_AGENCY_MARKER: &str = "<!-- Nexus-managed agency agent.";
+
+#[derive(Serialize)]
+pub struct AgencyAgentOption {
+    slug: String,
+    name: String,
+    category: String,
+}
+
 fn shell_escape(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn powershell_escape(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 /// Called once at startup, before the Tauri builder runs.
@@ -185,27 +206,54 @@ fn default_shell(shell_override: Option<String>) -> String {
     }
 
     if cfg!(target_os = "windows") {
-        std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+        if which("pwsh.exe").is_ok() {
+            "pwsh.exe".to_string()
+        } else if which("powershell.exe").is_ok() {
+            "powershell.exe".to_string()
+        } else {
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+        }
     } else {
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
     }
 }
 
 fn shell_wrap_command(shell: &str, command: &str, args: &[String]) -> (String, Vec<String>) {
-    let mut parts = Vec::with_capacity(args.len() + 1);
-    parts.push(shell_escape(command));
-    for arg in args {
-        parts.push(shell_escape(arg));
-    }
-
     let shell_name = Path::new(shell)
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or(shell);
+        .unwrap_or(shell)
+        .to_ascii_lowercase();
 
-    if shell_name == "fish" {
-        (shell.to_string(), vec!["-lc".to_string(), parts.join(" ")])
+    if shell_name == "pwsh" || shell_name == "pwsh.exe" || shell_name == "powershell" || shell_name == "powershell.exe" {
+        let mut script_parts = Vec::with_capacity(args.len() + 2);
+        script_parts.push("&".to_string());
+        script_parts.push(powershell_escape(command));
+        for arg in args {
+            script_parts.push(powershell_escape(arg));
+        }
+        (
+            shell.to_string(),
+            vec![
+                "-NoLogo".to_string(),
+                "-NoProfile".to_string(),
+                "-Command".to_string(),
+                script_parts.join(" "),
+            ],
+        )
+    } else if shell_name == "cmd" || shell_name == "cmd.exe" {
+        let mut parts = Vec::with_capacity(args.len() + 1);
+        parts.push(format!("\"{}\"", command.replace('"', "\"\"")));
+        for arg in args {
+            parts.push(format!("\"{}\"", arg.replace('"', "\"\"")));
+        }
+        (shell.to_string(), vec!["/C".to_string(), parts.join(" ")])
     } else {
+        let mut parts = Vec::with_capacity(args.len() + 1);
+        parts.push(shell_escape(command));
+        for arg in args {
+            parts.push(shell_escape(arg));
+        }
         (shell.to_string(), vec!["-lc".to_string(), parts.join(" ")])
     }
 }
@@ -882,4 +930,438 @@ pub fn git_status_count(cwd: String) -> Result<GitStatusSummary, String> {
     let branch = String::from_utf8_lossy(&branch_out.stdout).trim().to_string();
 
     Ok(GitStatusSummary { count, branch })
+}
+
+fn format_command_output(output: std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{stdout}\n{stderr}"),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (true, true) => String::new(),
+    }
+}
+
+fn ensure_command_exists(command: &str) -> Result<(), String> {
+    which(command)
+        .map(|_| ())
+        .map_err(|_| format!("Required command `{command}` was not found on PATH."))
+}
+
+fn run_command_checked(
+    program: &str,
+    args: &[&str],
+    cwd: Option<&str>,
+) -> Result<String, String> {
+    ensure_command_exists(program)?;
+
+    let mut command = Command::new(program);
+    command.args(args);
+    if let Some(dir) = cwd {
+        command.current_dir(dir);
+    }
+
+    let output = command.output().map_err(|e| e.to_string())?;
+    let success = output.status.success();
+    let code = output.status.code();
+    let combined = format_command_output(output);
+
+    if success {
+        Ok(combined)
+    } else if combined.is_empty() {
+        Err(format!(
+            "`{program}` exited with status {}.",
+            code.map(|code| code.to_string()).unwrap_or_else(|| "unknown".into())
+        ))
+    } else {
+        Err(combined)
+    }
+}
+
+fn make_temp_checkout_dir(prefix: &str) -> Result<PathBuf, String> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let dir = std::env::temp_dir().join(format!("nexus-{prefix}-{stamp}-{}", std::process::id()));
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+fn clone_repo_temp(url: &str, prefix: &str) -> Result<PathBuf, String> {
+    ensure_command_exists("git")?;
+    let temp_root = make_temp_checkout_dir(prefix)?;
+    let repo_dir = temp_root.join("repo");
+    let output = Command::new("git")
+        .args(["clone", "--depth", "1", url, repo_dir.to_string_lossy().as_ref()])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(repo_dir)
+    } else {
+        let combined = format_command_output(output);
+        let _ = fs::remove_dir_all(&temp_root);
+        if combined.is_empty() {
+            Err(format!("Failed to clone repository: {url}"))
+        } else {
+            Err(combined)
+        }
+    }
+}
+
+fn parse_markdown_title(content: &str, fallback: &str) -> String {
+    content
+        .lines()
+        .map(str::trim)
+        .find_map(|line| {
+            if let Some(value) = line.strip_prefix("# ") {
+                let trimmed = value.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+            None
+        })
+        .unwrap_or_else(|| fallback.replace('-', " "))
+}
+
+fn is_nexus_managed_agency_file(path: &Path) -> Result<bool, String> {
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    Ok(content.starts_with(NEXUS_MANAGED_AGENCY_MARKER))
+}
+
+fn scan_agency_agents(repo_dir: &Path) -> Result<Vec<(AgencyAgentOption, PathBuf)>, String> {
+    let excluded_dirs = [
+        ".git",
+        ".github",
+        "integrations",
+        "scripts",
+        "examples",
+    ];
+    let mut results = Vec::new();
+
+    for entry in fs::read_dir(repo_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let category = entry.file_name().to_string_lossy().to_string();
+        if excluded_dirs.contains(&category.as_str()) {
+            continue;
+        }
+
+        let mut stack = vec![entry.path()];
+        while let Some(dir) = stack.pop() {
+            for nested in fs::read_dir(&dir).map_err(|e| e.to_string())? {
+                let nested = nested.map_err(|e| e.to_string())?;
+                let nested_type = nested.file_type().map_err(|e| e.to_string())?;
+                let nested_path = nested.path();
+                if nested_type.is_dir() {
+                    stack.push(nested_path);
+                    continue;
+                }
+
+                if nested_path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                    continue;
+                }
+
+                let filename = nested_path.file_name().and_then(|name| name.to_str()).unwrap_or_default();
+                if filename.eq_ignore_ascii_case("README.md") {
+                    continue;
+                }
+
+                let slug = nested_path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or_default()
+                    .to_string();
+                if slug.is_empty() {
+                    continue;
+                }
+
+                let content = fs::read_to_string(&nested_path).map_err(|e| e.to_string())?;
+                let name = parse_markdown_title(&content, &slug);
+                results.push((
+                    AgencyAgentOption {
+                        slug,
+                        name,
+                        category: category.clone(),
+                    },
+                    nested_path,
+                ));
+            }
+        }
+    }
+
+    results.sort_by(|(left, _), (right, _)| {
+        left.category
+            .cmp(&right.category)
+            .then(left.name.cmp(&right.name))
+            .then(left.slug.cmp(&right.slug))
+    });
+    Ok(results)
+}
+
+fn map_spec_kit_ai(agent_id: &str) -> Option<&'static str> {
+    match agent_id {
+        "codex" => Some("codex"),
+        "claude-code" => Some("claude"),
+        "gemini-cli" => Some("gemini"),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+pub fn list_agency_agents() -> Result<Vec<AgencyAgentOption>, String> {
+    let repo_dir = clone_repo_temp(AGENCY_AGENTS_REPO, "agency-agents")?;
+    let temp_root = repo_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "Failed to resolve temporary agency repo root.".to_string())?;
+    let result = scan_agency_agents(&repo_dir).map(|entries| {
+        entries
+            .into_iter()
+            .map(|(option, _)| option)
+            .collect::<Vec<_>>()
+    });
+    let _ = fs::remove_dir_all(temp_root);
+    result
+}
+
+#[tauri::command]
+pub fn sync_project_agency_agent(
+    project_path: String,
+    slug: String,
+    enabled: bool,
+) -> Result<String, String> {
+    let project_dir = Path::new(&project_path);
+    if !project_dir.is_dir() {
+        return Err(format!("Project path is not a directory: {project_path}"));
+    }
+
+    let agent_file_path = project_dir.join(AGENCY_AGENT_DEST_RELATIVE_PATH);
+    let manifest_path = project_dir.join(AGENCY_AGENT_MANIFEST_RELATIVE_PATH);
+    let legacy_agent_file_path = project_dir.join(LEGACY_AGENCY_AGENT_DEST_RELATIVE_PATH);
+
+    if !enabled {
+        match is_nexus_managed_agency_file(&agent_file_path)? {
+            true => {
+                let _ = fs::remove_file(&agent_file_path);
+            }
+            false => {}
+        }
+        let _ = fs::remove_file(&manifest_path);
+        let _ = fs::remove_file(&legacy_agent_file_path);
+        return Ok(format!("Agency agent disabled for {}.", project_path));
+    }
+
+    let repo_dir = clone_repo_temp(AGENCY_AGENTS_REPO, "agency-agents")?;
+    let temp_root = repo_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "Failed to resolve temporary agency repo root.".to_string())?;
+    let entries = scan_agency_agents(&repo_dir)?;
+    let selected = entries
+        .into_iter()
+        .find(|(option, _)| option.slug == slug)
+        .ok_or_else(|| format!("Agency agent `{slug}` was not found upstream."))?;
+
+    if agent_file_path.exists() && !is_nexus_managed_agency_file(&agent_file_path)? {
+        let _ = fs::remove_dir_all(temp_root);
+        return Err(format!(
+            "{} already exists and is not Nexus-managed. Move or rename it before enabling Agency Agent.",
+            agent_file_path.to_string_lossy()
+        ));
+    }
+
+    if let Some(parent) = agent_file_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let source_content = fs::read_to_string(&selected.1).map_err(|e| e.to_string())?;
+    let wrapped = format!(
+        "<!-- Nexus-managed agency agent. Source: {} ({}) -->\n\n{}",
+        selected.0.name,
+        selected.1.to_string_lossy(),
+        source_content
+    );
+    fs::write(&agent_file_path, wrapped).map_err(|e| e.to_string())?;
+    let _ = fs::remove_file(&legacy_agent_file_path);
+
+    let manifest = serde_json::json!({
+        "version": 1,
+        "enabled": true,
+        "slug": selected.0.slug,
+        "name": selected.0.name,
+        "category": selected.0.category,
+        "source_repo": AGENCY_AGENTS_REPO,
+        "source_path": selected.1.to_string_lossy(),
+        "installed_path": agent_file_path.to_string_lossy(),
+    });
+    if let Some(parent) = manifest_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(
+        &manifest_path,
+        format!("{}\n", serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let _ = fs::remove_dir_all(temp_root);
+
+    Ok(format!(
+        "Agency agent `{}` installed to {}.",
+        selected.0.name,
+        agent_file_path.to_string_lossy()
+    ))
+}
+
+#[tauri::command]
+pub fn open_in_file_manager(path: String) -> Result<(), String> {
+    let target = Path::new(&path);
+    if !target.exists() {
+        return Err(format!("Path does not exist: {path}"));
+    }
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(&path);
+        command
+    };
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("explorer");
+        command.arg(&path);
+        command
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = if which("xdg-open").is_ok() {
+        let mut command = Command::new("xdg-open");
+        command.arg(&path);
+        command
+    } else if which("gio").is_ok() {
+        let mut command = Command::new("gio");
+        command.args(["open", &path]);
+        command
+    } else {
+        return Err("No supported file-manager opener found. Install `xdg-open` or `gio`.".into());
+    };
+
+    command.spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn bootstrap_spec_kit(project_path: String, agent_id: String) -> Result<String, String> {
+    let ai = map_spec_kit_ai(&agent_id).ok_or_else(|| {
+        format!(
+            "Spec Kit setup is only supported for Codex CLI, Claude Code, and Gemini CLI. Got `{agent_id}`."
+        )
+    })?;
+
+    let project_dir = Path::new(&project_path);
+    if !project_dir.is_dir() {
+        return Err(format!("Project path is not a directory: {project_path}"));
+    }
+
+    if project_dir.join(".specify").exists() {
+        return Ok(format!("Spec Kit already initialized in {project_path}. Skipped."));
+    }
+
+    let mut args = vec!["--from", SPEC_KIT_REPO, "specify", "init", "--here", "--force", "--ai", ai];
+    if agent_id == "codex" {
+        args.push("--ai-skills");
+    }
+    #[cfg(target_os = "windows")]
+    {
+        args.extend(["--script", "ps"]);
+    }
+
+    let output = run_command_checked("uvx", &args, Some(&project_path))?;
+
+    let summary = if output.is_empty() {
+        format!("Spec Kit bootstrapped in {project_path} for `{ai}`.")
+    } else {
+        format!("Spec Kit bootstrapped in {project_path} for `{ai}`.\n{output}")
+    };
+
+    Ok(summary)
+}
+
+#[tauri::command]
+pub fn install_caveman(agent_id: String) -> Result<String, String> {
+    match agent_id.as_str() {
+        "claude-code" => {
+            let first = run_command_checked(
+                "claude",
+                &["plugin", "marketplace", "add", "JuliusBrussee/caveman"],
+                None,
+            )?;
+            let second = run_command_checked(
+                "claude",
+                &["plugin", "install", "caveman@caveman"],
+                None,
+            )?;
+            Ok(format!(
+                "Caveman installed for Claude Code.\n{}\n{}",
+                first.trim(),
+                second.trim()
+            ).trim().to_string())
+        }
+        "gemini-cli" => {
+            let output = run_command_checked(
+                "gemini",
+                &["extensions", "install", CAVEMAN_REPO],
+                None,
+            )?;
+            Ok(if output.is_empty() {
+                "Caveman installed for Gemini CLI.".to_string()
+            } else {
+                format!("Caveman installed for Gemini CLI.\n{output}")
+            })
+        }
+        "cline" => {
+            let output = run_command_checked(
+                "npx",
+                &["skills", "add", "JuliusBrussee/caveman", "-a", "cline"],
+                None,
+            )?;
+            Ok(if output.is_empty() {
+                "Caveman installed for Cline.".to_string()
+            } else {
+                format!("Caveman installed for Cline.\n{output}")
+            })
+        }
+        "kiro" => {
+            let output = run_command_checked(
+                "npx",
+                &["skills", "add", "JuliusBrussee/caveman", "-a", "kiro-cli"],
+                None,
+            )?;
+            Ok(if output.is_empty() {
+                "Caveman installed for Kiro CLI.".to_string()
+            } else {
+                format!("Caveman installed for Kiro CLI.\n{output}")
+            })
+        }
+        "codex" => Err(
+            "Codex Caveman install is not yet automatable from Nexus. Upstream requires opening Codex in a local Caveman repo and installing the plugin through `/plugins`."
+                .into(),
+        ),
+        _ => Err(format!(
+            "No verified one-click Caveman install flow is documented upstream for `{agent_id}` yet."
+        )),
+    }
 }

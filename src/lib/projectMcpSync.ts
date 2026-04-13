@@ -1,4 +1,4 @@
-import { dirname } from "@tauri-apps/api/path";
+import { dirname, homeDir } from "@tauri-apps/api/path";
 import { create, exists, mkdir, readTextFile } from "@tauri-apps/plugin-fs";
 import type { AgentId, McpServerConfig, Project } from "../types";
 
@@ -21,7 +21,15 @@ type LaunchOverrides = {
   env: Record<string, string>;
 };
 
+type CodexHomeMcpServer = {
+  name: string;
+  command?: string;
+  args?: string[];
+  url?: string;
+};
+
 const MANAGED_MANIFEST_RELATIVE_PATH = ".nexus/mcp-managed.json";
+export const PROJECT_PATH_PLACEHOLDER = "<PROJECT_PATH>";
 
 const AGENT_MCP_ADAPTERS: Partial<Record<AgentId, AgentConfigAdapter>> = {
   "claude-code": {
@@ -86,6 +94,13 @@ export function getAgentMcpInstallLabel(agentId: AgentId) {
 
 function joinProjectPath(projectPath: string, relativePath: string) {
   return `${projectPath.replace(/[\\/]+$/, "")}/${relativePath}`;
+}
+
+function replaceAll(value: string, needle: string, replacement: string) {
+  if (!needle) {
+    return value;
+  }
+  return value.split(needle).join(replacement);
 }
 
 function asRecord(value: unknown): JsonRecord {
@@ -174,6 +189,84 @@ function stripJsonComments(value: string) {
   }
 
   return result.replace(/,\s*([}\]])/g, "$1");
+}
+
+function resolveProjectScopedValue(value: string, projectPath: string) {
+  return replaceAll(value, PROJECT_PATH_PLACEHOLDER, projectPath);
+}
+
+function globalizeProjectScopedValue(value: string, projectPath: string) {
+  return replaceAll(value, projectPath, PROJECT_PATH_PLACEHOLDER);
+}
+
+function resolveProjectScopedServer(server: McpServerConfig, project: Project): McpServerConfig {
+  return {
+    ...server,
+    command: resolveProjectScopedValue(server.command, project.path),
+    args: server.args.map((arg) => resolveProjectScopedValue(arg, project.path)),
+    env: server.env
+      ? Object.fromEntries(
+          Object.entries(server.env).map(([key, value]) => [
+            key,
+            resolveProjectScopedValue(value, project.path),
+          ]),
+        )
+      : {},
+  };
+}
+
+function globalizeProjectScopedServer(server: McpServerConfig, projectPath: string): McpServerConfig {
+  return {
+    ...server,
+    command: globalizeProjectScopedValue(server.command, projectPath),
+    args: server.args.map((arg) => globalizeProjectScopedValue(arg, projectPath)),
+    env: server.env
+      ? Object.fromEntries(
+          Object.entries(server.env).map(([key, value]) => [
+            key,
+            globalizeProjectScopedValue(value, projectPath),
+          ]),
+        )
+      : {},
+  };
+}
+
+function sortRecord(value?: Record<string, string>) {
+  return Object.fromEntries(
+    Object.entries(value ?? {}).sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+export function migrateLegacyProjectMcpServers(projects: Project[]): McpServerConfig[] {
+  const merged = new Map<string, McpServerConfig>();
+
+  for (const project of projects) {
+    for (const server of project.mcpServers ?? []) {
+      const globalServer = globalizeProjectScopedServer(server, project.path);
+      const key = JSON.stringify({
+        name: globalServer.name,
+        command: globalServer.command,
+        args: globalServer.args,
+        env: sortRecord(globalServer.env),
+      });
+      const existing = merged.get(key);
+      if (existing) {
+        merged.set(key, {
+          ...existing,
+          enabledAgentIds: Array.from(
+            new Set([...existing.enabledAgentIds, ...globalServer.enabledAgentIds]),
+          ),
+        });
+        continue;
+      }
+      merged.set(key, {
+        ...globalServer,
+        env: sortRecord(globalServer.env),
+      });
+    }
+  }
+
+  return Array.from(merged.values());
 }
 
 function parseJsonLike<T>(content: string, mode: "json" | "jsonc") {
@@ -325,33 +418,194 @@ function formatTomlInlineTable(values: Record<string, string>) {
   return `{ ${entries.join(", ")} }`;
 }
 
-function buildCodexLaunchArgs(project: Project) {
-  const args: string[] = [];
-  const usedKeys = new Set<string>();
+function normalizeCommandSignature(command: string, args: string[]) {
+  return `${command}\u0000${args.join("\u0000")}`;
+}
 
-  for (const server of project.mcpServers.filter((entry) => entry.enabledAgentIds.includes("codex"))) {
-    const key = nextCodexServerKey(server, usedKeys);
-    args.push("-c", `mcp_servers.${key}.command=${formatTomlString(server.command)}`);
+function parseTomlStringLiteral(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("\"")) {
+    try {
+      return JSON.parse(trimmed) as string;
+    } catch {
+      return null;
+    }
+  }
 
-    if (server.args.length > 0) {
-      args.push("-c", `mcp_servers.${key}.args=${formatTomlArray(server.args)}`);
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1);
+  }
+
+  return null;
+}
+
+function parseTomlStringArrayLiteral(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseCodexHomeMcpServers(content: string) {
+  const servers = new Map<string, CodexHomeMcpServer>();
+  let currentServer: CodexHomeMcpServer | null = null;
+  let pendingArgsKey: string | null = null;
+  let pendingArgsLines: string[] = [];
+
+  const flushPendingArgs = () => {
+    if (!currentServer || pendingArgsKey !== "args" || pendingArgsLines.length === 0) {
+      pendingArgsKey = null;
+      pendingArgsLines = [];
+      return;
     }
 
-    if (server.env && Object.keys(server.env).length > 0) {
-      args.push("-c", `mcp_servers.${key}.env=${formatTomlInlineTable(server.env)}`);
+    const parsedArgs = parseTomlStringArrayLiteral(pendingArgsLines.join(" "));
+    if (parsedArgs) {
+      currentServer.args = parsedArgs;
+    }
+    pendingArgsKey = null;
+    pendingArgsLines = [];
+  };
+
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    if (pendingArgsKey) {
+      pendingArgsLines.push(line);
+      if (line.includes("]")) {
+        flushPendingArgs();
+      }
+      continue;
+    }
+
+    const sectionMatch = line.match(/^\[mcp_servers\.([^\]]+)\]$/);
+    if (sectionMatch) {
+      const rawName = sectionMatch[1];
+      if (rawName.includes(".tools.")) {
+        currentServer = null;
+        continue;
+      }
+
+      const name =
+        parseTomlStringLiteral(rawName) ??
+        rawName.replace(/^"+|"+$/g, "");
+      currentServer = servers.get(name) ?? { name };
+      servers.set(name, currentServer);
+      continue;
+    }
+
+    if (!currentServer) {
+      continue;
+    }
+
+    const keyValueMatch = line.match(/^([A-Za-z0-9_]+)\s*=\s*(.+)$/);
+    if (!keyValueMatch) {
+      continue;
+    }
+
+    const [, key, value] = keyValueMatch;
+    if (key === "command" || key === "url") {
+      const parsedValue = parseTomlStringLiteral(value);
+      if (parsedValue) {
+        currentServer[key] = parsedValue;
+      }
+      continue;
+    }
+
+    if (key === "args") {
+      const parsedArgs = parseTomlStringArrayLiteral(value);
+      if (parsedArgs) {
+        currentServer.args = parsedArgs;
+        continue;
+      }
+
+      pendingArgsKey = "args";
+      pendingArgsLines = [value];
+      if (value.includes("]")) {
+        flushPendingArgs();
+      }
+    }
+  }
+
+  flushPendingArgs();
+  return Array.from(servers.values());
+}
+
+async function readCodexHomeMcpServers() {
+  try {
+    const codexConfigPath = `${(await homeDir()).replace(/[\\/]+$/, "")}/.codex/config.toml`;
+    const content = await readTextFile(codexConfigPath);
+    return parseCodexHomeMcpServers(content);
+  } catch {
+    return [];
+  }
+}
+
+async function getCodexDuplicateMatchers() {
+  const homeServers = await readCodexHomeMcpServers();
+  return {
+    names: new Set(homeServers.map((server) => server.name.toLowerCase())),
+    commandSignatures: new Set(
+      homeServers
+        .filter((server): server is CodexHomeMcpServer & { command: string } => Boolean(server.command))
+        .map((server) => normalizeCommandSignature(server.command, server.args ?? [])),
+    ),
+  };
+}
+
+async function buildCodexLaunchArgs(project: Project, mcpServers: McpServerConfig[]) {
+  const args: string[] = [];
+  const usedKeys = new Set<string>();
+  const duplicates = await getCodexDuplicateMatchers();
+
+  for (const server of mcpServers.filter((entry) => entry.enabledAgentIds.includes("codex"))) {
+    const resolvedServer = resolveProjectScopedServer(server, project);
+    const normalizedName = resolvedServer.name.trim().toLowerCase();
+    if (duplicates.names.has(normalizedName)) {
+      continue;
+    }
+
+    const commandSignature = normalizeCommandSignature(
+      resolvedServer.command,
+      resolvedServer.args,
+    );
+    if (duplicates.commandSignatures.has(commandSignature)) {
+      continue;
+    }
+
+    const key = nextCodexServerKey(resolvedServer, usedKeys);
+    args.push("-c", `mcp_servers.${key}.command=${formatTomlString(resolvedServer.command)}`);
+
+    if (resolvedServer.args.length > 0) {
+      args.push("-c", `mcp_servers.${key}.args=${formatTomlArray(resolvedServer.args)}`);
+    }
+
+    if (resolvedServer.env && Object.keys(resolvedServer.env).length > 0) {
+      args.push("-c", `mcp_servers.${key}.env=${formatTomlInlineTable(resolvedServer.env)}`);
     }
   }
 
   return args;
 }
 
-export function buildProjectAgentLaunchOverrides(
+export async function buildProjectAgentLaunchOverrides(
   project: Project,
   agentId: AgentId,
-): LaunchOverrides {
+  mcpServers: McpServerConfig[],
+): Promise<LaunchOverrides> {
   if (agentId === "codex") {
     return {
-      args: buildCodexLaunchArgs(project),
+      args: await buildCodexLaunchArgs(project, mcpServers),
       env: {},
     };
   }
@@ -363,7 +617,7 @@ export function buildProjectAgentLaunchOverrides(
   };
 }
 
-export async function syncProjectMcpFiles(project: Project) {
+export async function syncProjectMcpFiles(project: Project, mcpServers: McpServerConfig[]) {
   const manifestPath = joinProjectPath(project.path, MANAGED_MANIFEST_RELATIVE_PATH);
   const manifest = (await readJsonFile<ManagedManifest>(manifestPath)) ?? {
     version: 1 as const,
@@ -386,9 +640,11 @@ export async function syncProjectMcpFiles(project: Project) {
       Object.entries(currentEntries).filter(([key]) => !previousKeys.includes(key)),
     );
 
-    const enabledServers = project.mcpServers.filter((server) =>
+    const enabledServers = mcpServers
+      .filter((server) =>
       server.enabledAgentIds.includes(agentId),
-    );
+      )
+      .map((server) => resolveProjectScopedServer(server, project));
 
     const nextManagedKeys: Record<string, string> = {};
     const managedEntries = Object.fromEntries(

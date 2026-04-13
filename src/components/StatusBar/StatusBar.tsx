@@ -7,7 +7,67 @@ interface StatusBarProps {
   health: SystemHealth | null;
 }
 
+function getBrowserOsLabel() {
+  const platform = navigator.platform.toLowerCase();
+  if (platform.includes("win")) {
+    return "Windows";
+  }
+  if (platform.includes("mac")) {
+    return "macOS";
+  }
+  if (platform.includes("linux") || platform.includes("x11")) {
+    return "Linux";
+  }
+  return navigator.platform || "Desktop";
+}
+
+function formatOsLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized === "desktop") {
+    return getBrowserOsLabel();
+  }
+  if (normalized === "macos") {
+    return "macOS";
+  }
+  if (normalized === "windows") {
+    return "Windows";
+  }
+  if (normalized === "linux") {
+    return "Linux";
+  }
+  return value;
+}
+
+function formatShellLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized === "shell") {
+    return "Auto";
+  }
+  if (normalized === "auto") {
+    return "Auto";
+  }
+  if (normalized === "pwsh" || normalized === "pwsh.exe" || normalized === "powershell" || normalized === "powershell.exe") {
+    return "PowerShell";
+  }
+  if (normalized === "cmd" || normalized === "cmd.exe") {
+    return "CMD";
+  }
+  if (normalized === "zsh") {
+    return "zsh";
+  }
+  if (normalized === "bash") {
+    return "bash";
+  }
+  if (normalized === "fish") {
+    return "fish";
+  }
+  return value.split(/[\\/]/).pop() || value;
+}
+
 export function StatusBar({ project, runningCount, runtimeInfo, health }: StatusBarProps) {
+  const shellLabel = formatShellLabel(runtimeInfo.shell);
+  const osLabel = formatOsLabel(runtimeInfo.os);
+
   return (
     <footer className="bg-[#1a1a1a] text-[#a0a0a0] flex justify-between px-4 py-1.5 text-[10px] font-mono uppercase z-50 shrink-0 border-t-2 border-[#1a1a1a]">
       <div className="flex items-center gap-4">
@@ -43,7 +103,7 @@ export function StatusBar({ project, runningCount, runtimeInfo, health }: Status
       <div className="flex items-center gap-4 text-[#f5f0e8]">
         <div className="flex items-center gap-1.5">
           <span className="material-symbols-outlined text-xs text-[#a0a0a0]">terminal</span>
-          <span>{runtimeInfo.shell.toUpperCase()} ({runtimeInfo.os.toUpperCase()})</span>
+          <span>{shellLabel.toUpperCase()} ({osLabel.toUpperCase()})</span>
         </div>
         
         <div className="flex items-center gap-1.5">

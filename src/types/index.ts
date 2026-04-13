@@ -26,6 +26,11 @@ export interface McpServerConfig {
   enabledAgentIds: AgentId[];
 }
 
+export interface AgencyAgentProjectConfig {
+  enabled: boolean;
+  selectedAgentSlug: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -33,6 +38,7 @@ export interface Project {
   color: string;
   defaultAgents: AgentId[];
   mcpServers: McpServerConfig[];
+  agencyAgent?: AgencyAgentProjectConfig;
   createdAt: number;
 }
 
@@ -47,6 +53,7 @@ export interface AppSettings {
   shellOverride: string;
   defaultAgentArgs: Record<string, string>;
   customAgents: AgentConfig[];
+  mcpServers: McpServerConfig[];
 }
 
 export interface PersistedProjects {

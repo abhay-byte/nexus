@@ -13,8 +13,11 @@
 - **Split panes** — split horizontally or vertically (up to 2×2); the split button toggles 1→2→1
 - **Kanban board** — every project gets a built-in `◈ KANBAN` tab with Todo / In Progress / Done / Blocked columns; tasks persist across restarts
 - **Session persistence** — terminals survive app restarts; layout and sessions are restored automatically
+- **Batched terminal streaming** — noisy agents like Codex are buffered before UI updates so long runs do not thrash the webview
 - **True-color PTY** — `xterm-256color` + `COLORTERM=truecolor` injected; TUI tools (Codex, lazygit, etc.) render correctly  
 - **Credential inheritance** — PTY spawner inherits your full shell environment (API keys, PATH, etc.) so agents are already logged in
+- **Shared MCP registry** — configure MCP once in `Settings -> Agents & MCP`, then let Nexus inject or sync it across every registered project
+- **Workflow add-ons** — bootstrap Spec Kit into real `.specify/` project files, install a project-level `AGENCY.md` specialist, and install Caveman for supported agents from settings
 - **Brutalist UI** — high-contrast dark mode, Space Grotesk typography, yellow accent (`#ffcc00`), pixel-shadow components
 
 ---
@@ -101,6 +104,8 @@ npm install
 # OR
 npm run tauri dev
 ```
+
+MCP setup details and preset behavior are documented in [docs/agent-mcp-skills-guide.md](docs/agent-mcp-skills-guide.md).
 
 ---
 

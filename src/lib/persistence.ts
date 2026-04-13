@@ -32,7 +32,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "claude-code": "--dangerously-skip-permissions",
   },
   customAgents: [],
+  mcpServers: [],
 };
+
+function sanitizeMcpServers(settings: Pick<AppSettings, "mcpServers">) {
+  return (settings.mcpServers ?? []).map((server) => ({
+    ...server,
+    enabledAgentIds: (server.enabledAgentIds ?? []).filter(
+      (agentId) => !removedBuiltInAgentIds.has(agentId),
+    ),
+  }));
+}
 
 async function ensureDataDir() {
   const hasDir = await exists(DATA_DIR, { baseDir: BaseDirectory.AppConfig });
@@ -56,6 +66,10 @@ function sanitizeProject(project: Project): Project {
         (agentId) => !removedBuiltInAgentIds.has(agentId),
       ),
     })),
+    agencyAgent: {
+      enabled: project.agencyAgent?.enabled ?? false,
+      selectedAgentSlug: project.agencyAgent?.selectedAgentSlug ?? "agents-orchestrator",
+    },
   };
 }
 
@@ -133,6 +147,9 @@ export async function loadSessions(): Promise<PersistedSessions | null> {
         ),
       },
       customAgents: parsed.settings?.customAgents ?? [],
+      mcpServers: sanitizeMcpServers({
+        mcpServers: parsed.settings?.mcpServers ?? DEFAULT_SETTINGS.mcpServers,
+      }),
     },
   };
 }

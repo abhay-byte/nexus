@@ -4,6 +4,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 import { PROJECT_SWATCHES } from "../constants/agents";
 import { syncProjectMcpFiles } from "../lib/projectMcpSync";
 import { loadProjects, saveProjects } from "../lib/persistence";
+import { useSessionStore } from "./sessionStore";
 import type { AddProjectDraft, Project } from "../types";
 
 interface ProjectStoreState {
@@ -29,6 +30,11 @@ const syncProjectsToDisk = async (projects: Project[]) => {
   await saveProjects(projects);
 };
 
+const getMcpServersForProjectSync = (project: Project) => {
+  const sessionState = useSessionStore.getState();
+  return sessionState.initialized ? sessionState.settings.mcpServers : project.mcpServers;
+};
+
 export const useProjectStore = create<ProjectStoreState>()(
   subscribeWithSelector((set, get) => ({
     projects: [],
@@ -47,7 +53,11 @@ export const useProjectStore = create<ProjectStoreState>()(
 
       try {
         const projects = await loadProjects();
-        await Promise.allSettled(projects.map((project) => syncProjectMcpFiles(project)));
+        await Promise.allSettled(
+          projects.map((project) =>
+            syncProjectMcpFiles(project, getMcpServersForProjectSync(project)),
+          ),
+        );
         const fallbackOpen = projects[0] ? [projects[0].id] : [];
 
         set({
@@ -78,6 +88,10 @@ export const useProjectStore = create<ProjectStoreState>()(
         color: draft.color || PROJECT_SWATCHES[0],
         defaultAgents: draft.defaultAgents,
         mcpServers: draft.mcpServers ?? [],
+        agencyAgent: {
+          enabled: false,
+          selectedAgentSlug: "agents-orchestrator",
+        },
         createdAt: Date.now(),
       };
 
@@ -96,7 +110,7 @@ export const useProjectStore = create<ProjectStoreState>()(
       }));
 
       await syncProjectsToDisk(projects);
-      await syncProjectMcpFiles(project);
+      await syncProjectMcpFiles(project, getMcpServersForProjectSync(project));
     },
     updateProject: async (projectId, patch) => {
       const projects = get().projects.map((project) =>
@@ -109,6 +123,7 @@ export const useProjectStore = create<ProjectStoreState>()(
               color: patch.color ?? project.color,
               defaultAgents: patch.defaultAgents ?? project.defaultAgents,
               mcpServers: patch.mcpServers ?? project.mcpServers,
+              agencyAgent: patch.agencyAgent ?? project.agencyAgent,
             }
           : project,
       );
@@ -117,7 +132,10 @@ export const useProjectStore = create<ProjectStoreState>()(
       await syncProjectsToDisk(projects);
       const updatedProject = projects.find((project) => project.id === projectId);
       if (updatedProject) {
-        await syncProjectMcpFiles(updatedProject);
+        await syncProjectMcpFiles(
+          updatedProject,
+          getMcpServersForProjectSync(updatedProject),
+        );
       }
     },
     removeProject: async (projectId) => {

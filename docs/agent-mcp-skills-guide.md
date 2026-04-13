@@ -2,7 +2,7 @@
 
 This guide explains:
 
-- how Nexus project-level MCP settings work
+- how Nexus shared MCP settings work
 - which MCP servers Nexus can now add as presets
 - which agent config files Nexus writes automatically
 - how to install useful skills and workflows for the remaining CLI agents
@@ -10,7 +10,7 @@ This guide explains:
 
 ## What Nexus now does
 
-Per-project MCP servers are configured in `Settings -> Agents & MCP -> Projects -> MCP Server Registry`.
+Shared MCP servers are configured in `Settings -> Agents & MCP -> MCP Server Registry`.
 
 Nexus now supports:
 
@@ -38,10 +38,12 @@ Nexus now supports:
 
 Important behavior:
 
+- MCP servers are configured once and applied to every registered project.
 - Nexus preserves MCP entries it did not create.
 - Nexus only adds, updates, or removes the server entries it manages.
 - Nexus keeps `Aider` and custom agents manual for now.
 - OpenCode and Cline use Nexus-managed config roots so Nexus does not overwrite a user's existing native config.
+- Legacy per-project MCP entries are migrated into the shared registry automatically the first time the new flow loads.
 
 ## Preset Catalog
 
@@ -96,7 +98,7 @@ Important behavior:
   - `command`: `npx`
   - `args`: `-y @modelcontextprotocol/server-filesystem <PROJECT_PATH>`
 - Notes:
-  - Nexus automatically inserts the selected project path as the allowed directory.
+  - Nexus stores `<PROJECT_PATH>` in the shared registry and resolves it to each project's root when syncing config files or launching agents.
 
 ### sequential-thinking
 
@@ -119,7 +121,7 @@ Important behavior:
 
 ## Auto-Wired Agent Integrations
 
-Nexus writes or injects these integrations from the per-project MCP registry:
+Nexus writes or injects these integrations from the shared MCP registry:
 
 ### Kiro
 
@@ -169,20 +171,35 @@ Nexus writes or injects these integrations from the per-project MCP registry:
 ### Codex CLI
 
 - File: none
-- Launch behavior: Nexus injects per-project MCP entries at startup with repeated `-c mcp_servers.<name>...` arguments
+- Launch behavior: Nexus injects project-resolved MCP entries at startup with repeated `-c mcp_servers.<name>...` arguments
+- Important:
+  - Codex also loads MCP servers from `~/.codex/config.toml`.
+  - Nexus now skips injecting a Codex MCP server if the same server is already present in the user's home Codex config by name or matching `command + args`.
+  - In `/mcp`, Nexus-managed entries are prefixed with `nexus_`. Non-prefixed entries usually come from the user's existing Codex config or Codex plugins.
+
+### Codex Troubleshooting
+
+- If `/mcp` shows both `context-mode` and `nexus_context_mode`, an older Nexus build injected a duplicate on top of the user's `~/.codex/config.toml`. The duplicate-skip fix removes that extra Nexus copy for future sessions.
+- If `/mcp` shows a server like `unityMCP`, and that name is not prefixed with `nexus_`, it is not coming from Nexus. Check `~/.codex/config.toml`.
+- If a Nexus-managed server appears but has `Tools: (none)`, Codex received the config but the server itself failed to initialize. Common causes are:
+  - missing local dependency such as `docker`, `uvx`, or `npx`
+  - missing required env vars such as `GITHUB_PERSONAL_ACCESS_TOKEN`
+  - the backing local service is not running, for example `http://127.0.0.1:8080/mcp`
+- The GitHub preset currently uses the local Docker-based GitHub MCP server. If Docker is unavailable or unhealthy, Codex will list the server name but startup will fail.
+- The Android preset currently assumes `uvx` plus a working Android/ADB setup. Codex can list the server entry even when the underlying Android MCP process exits during startup.
 
 ## Manual MCP for the Remaining Built-In Agents
 
-For these agents, Nexus stores the canonical server definition in project settings, but you still need to wire MCP manually:
+For these agents, Nexus stores the canonical server definition in the shared settings registry, but you still need to wire MCP manually:
 
 - `Aider`
 - custom agents added by the user
 
 Practical workflow:
 
-1. Add the server preset in Nexus for the project.
+1. Add the server preset in `Settings -> Agents & MCP`.
 2. Enable the agents that should use that server.
-3. For the auto-wired agents above, Nexus writes or injects the config automatically.
+3. For the auto-wired agents above, Nexus writes or injects the config automatically for every registered project.
 4. For manual agents, copy the server definition from Nexus into the agent's native MCP config file or settings UI.
 
 ## Skills and Agent Add-Ons
@@ -210,6 +227,32 @@ Important caveat from upstream:
 Codex note:
 
 - upstream documents repo-local Codex hook usage and `$caveman` command syntax instead of `/caveman`
+
+### Nexus one-click install
+
+Nexus now exposes `Install Caveman` in `Settings -> Agents & MCP` for these agents:
+
+- `Claude Code`
+- `Gemini CLI`
+- `Cline`
+- `Kiro`
+
+Nexus uses the upstream install command for each supported agent:
+
+- `Claude Code`:
+  - `claude plugin marketplace add JuliusBrussee/caveman`
+  - `claude plugin install caveman@caveman`
+- `Gemini CLI`:
+  - `gemini extensions install https://github.com/JuliusBrussee/caveman`
+- `Cline`:
+  - `npx skills add JuliusBrussee/caveman -a cline`
+- `Kiro`:
+  - `npx skills add JuliusBrussee/caveman -a kiro-cli`
+
+Important caveats:
+
+- Nexus does not yet automate the Codex Caveman plugin flow because upstream requires installing it through Codex from a local Caveman clone.
+- For agents installed through `npx skills add`, upstream notes that the skill file is installed but always-on rule files may still need manual setup if you want session-start activation everywhere.
 
 ## Context7 as a Skill
 
@@ -251,12 +294,13 @@ Repository: `https://github.com/github/spec-kit`
 What it is:
 
 - a spec-driven development toolkit for agent workflows
+- it creates a real project-local `.specify/` directory with templates, prompts, and workflow scaffolding inside your project folder
 
 Bootstrap command from upstream:
 
 - `uvx --from git+https://github.com/github/spec-kit.git specify init . --ai claude`
 - for an existing project:
-  - `specify init --here --ai <agent>`
+  - `specify init --here --force --ai <agent>`
 
 Core workflow from upstream:
 
@@ -269,6 +313,64 @@ Codex note from upstream:
 
 - most agents use `/speckit.*`
 - Codex CLI in skills mode uses `$speckit-*`
+
+### Nexus one-click bootstrap
+
+Nexus now exposes `Bootstrap Spec Kit` on each project in `Settings -> Projects`.
+
+Supported target agents:
+
+- `Codex CLI`
+- `Claude Code`
+- `Gemini CLI`
+
+Nexus runs the upstream project bootstrap in the selected project directory:
+
+- `uvx --from git+https://github.com/github/spec-kit.git specify init --here --force --ai <agent>`
+- for `Codex CLI`, Nexus also enables Spec Kit AI skills with `--ai-skills`
+- on Windows, Nexus uses Spec Kit's PowerShell script mode when bootstrapping from the desktop app
+
+Behavior:
+
+- if `.specify` already exists, Nexus skips the project
+- if `.specify` is missing, Nexus initializes Spec Kit in-place
+
+Why Nexus does not hand-write those files itself:
+
+- Spec Kit owns the generated file layout and templates upstream
+- running upstream init keeps the project consistent with the current Spec Kit workflow instead of freezing an outdated Nexus copy
+
+## Agency Agents
+
+Repository: `https://github.com/msitarzewski/agency-agents`
+
+What it is:
+
+- a large catalog of specialist agent personas maintained upstream
+
+### Nexus project install
+
+Nexus now exposes an `Agency Agent` section in `Settings -> Projects`.
+
+Flow:
+
+1. Choose a specialist from the dropdown.
+2. Toggle the feature on for the project.
+3. Nexus writes:
+   - `AGENCY.md`
+   - `.nexus/agency-agents.json`
+
+Important behavior:
+
+- this is project-scoped, not global
+- Nexus stores one selected upstream specialist per project
+- the install is file-based and PowerShell-safe because Nexus copies the upstream Markdown directly instead of relying on upstream bash installers
+- Nexus only overwrites `AGENCY.md` when that file was previously created by Nexus, so an existing manual project file is not clobbered
+- the generated file is intended as project-local agent context for Nexus-managed workflows
+
+Windows note:
+
+- Nexus fetches the upstream repository with `git`; PowerShell itself is fine, but `git` must be available on PATH
 
 ### Nexus helper script
 
@@ -303,13 +405,21 @@ If the device is not listed or is `unauthorized`, fix USB debugging or Wi-Fi ADB
 - `Kiro`: strongest current Nexus auto-sync story for MCP
 - `Junie`: also auto-synced by Nexus
 - `Codex CLI`: good fit for `filesystem`, `context7`, `github`, `playwright`, and `Spec Kit`; Nexus injects MCP on launch
-- `Claude Code`: strong fit for `context-mode`, `context7`, `filesystem`, `playwright`, `github`, and `Spec Kit`; Nexus writes `.mcp.json`
+- `Claude Code`: strong fit for `context-mode`, `context7`, `filesystem`, `playwright`, `github`, `Spec Kit`, and `Caveman`; Nexus writes `.mcp.json`
 - `Gemini CLI`: strong fit for `context7`, `Spec Kit`, and `Caveman`; Nexus writes `.gemini/settings.json`
 - `Qwen Code`: good fit for generic stdio MCP servers; Nexus writes `.qwen/settings.json`
 - `Kilo Code`: good fit for generic stdio MCP servers; Nexus writes `.kilocode/mcp.json`
 - `OpenCode`: good fit for generic stdio MCP servers; Nexus uses a managed `OPENCODE_CONFIG`
-- `Cline`: usable with presets; Nexus uses a managed `CLINE_DIR`
+- `Cline`: usable with presets and Caveman; Nexus uses a managed `CLINE_DIR`
 - `Aider`: manual-only today
+
+## Windows / PowerShell Notes
+
+- `Open Folder` now uses a native OS opener instead of shell-open from the frontend.
+- `Spec Kit` bootstrap uses upstream PowerShell mode on Windows.
+- PTY shell auto-detect now prefers `pwsh.exe`, then `powershell.exe`, then `cmd.exe`.
+- `Agency Agent` project installs are file-based in Rust and do not depend on bash.
+- `Caveman` one-click installs call the target executable directly (`claude`, `gemini`, `npx`) and are PowerShell-safe as long as those commands are on PATH.
 
 ## Sources
 
