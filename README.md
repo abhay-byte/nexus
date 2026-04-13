@@ -40,76 +40,59 @@
 
 ## Install
 
-### 📦 Download pre-built binary (recommended)
+> **[⬇ Download latest release](https://github.com/abhay-byte/nexus/releases/latest)**
 
-Grab the latest release from the [**GitHub Releases page**](https://github.com/abhay-byte/nexus/releases/latest):
-
-| Platform | Architecture | File to download |
-|---|---|---|
-| 🐧 Linux | x86_64 | `nexus_*_amd64.AppImage` or `nexus_*_amd64.deb` |
-| 🪟 Windows | x86_64 | `nexus_*_x64-setup.exe` or `nexus_*_x64_en-US.msi` |
-| 🪟 Windows | ARM64 | `nexus_*_arm64-setup.exe` or `nexus_*_arm64_en-US.msi` |
-
-#### Linux — AppImage
-
-```bash
-chmod +x nexus_*.AppImage
-./nexus_*.AppImage
-```
-
-> For system-wide availability you can move it to `~/.local/bin/nexus` and run `nexus` anywhere.
-
-#### Linux — .deb (Debian / Ubuntu)
-
-```bash
-sudo dpkg -i nexus_*_amd64.deb
-nexus
-```
-
-#### Windows — Installer (x86_64 or ARM64)
-
-Run the downloaded `.exe` or `.msi` installer and follow the wizard. Nexus will appear in the Start menu after installation.
+Pre-built packages are available for all platforms — no build toolchain required.
 
 ---
 
-### ⚡ One-line install — build from source (Linux only)
+### 🐧 Linux — x86_64
 
-Paste this in your terminal. It automatically installs system libraries, Rust, Node.js, and Nexus itself:
+**Option A — AppImage** (any distro, portable):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/abhay-byte/nexus/main/install.sh | bash
+chmod +x Nexus_0.1.1_amd64.AppImage
+./Nexus_0.1.1_amd64.AppImage
 ```
 
-Then launch from anywhere:
+> Move it to `~/.local/bin/nexus` so you can run `nexus` from anywhere.
+
+**Option B — .deb** (Debian / Ubuntu / Mint):
+
 ```bash
+sudo dpkg -i Nexus_0.1.1_amd64.deb
 nexus
 ```
 
-> **Requires `~/.local/bin` in your PATH** — the script will tell you if you need to add it.  
-> Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` / `~/.zshrc` if needed, then `source ~/.bashrc`.
+---
 
-**What the script does:**
-1. Detects your distro (Debian/Ubuntu, Arch, Fedora, openSUSE) and installs Tauri system libraries
-2. Installs **Rust** via `rustup` if not present
-3. Installs **Node.js 20** via `fnm` if not present
-4. Clones this repo to a temp directory
-5. Builds the release binary (`npm run tauri build --no-bundle`)
-6. Copies the binary to `~/.local/bin/nexus`
-7. Creates a `.desktop` entry so it appears in your app launcher
+### 🐧 Linux — ARM64
+
+**Option A — AppImage** (any distro, portable):
+
+```bash
+chmod +x Nexus_0.1.1_aarch64.AppImage
+./Nexus_0.1.1_aarch64.AppImage
+```
+
+**Option B — .deb** (Debian / Ubuntu / Mint ARM):
+
+```bash
+sudo dpkg -i Nexus_0.1.1_aarch64.deb
+nexus
+```
 
 ---
 
-### 🔧 Manual install (from cloned repo)
+### 🪟 Windows — x86_64
 
-If you already have Node.js ≥ 18 and Rust + Cargo installed:
+Download `Nexus_0.1.1_x64-setup.exe` or `Nexus_0.1.1_x64_en-US.msi` and run the installer. Nexus will appear in the Start menu.
 
-```bash
-# Install Tauri system dependencies (Debian/Ubuntu)
-sudo apt install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+---
 
-# Clone + build + install
-git clone https://github.com/abhay-byte/nexus.git && cd nexus && ./install.sh
-```
+### 🪟 Windows — ARM64
+
+Download `Nexus_0.1.1_arm64-setup.exe` or `Nexus_0.1.1_arm64_en-US.msi` and run the installer.
 
 ---
 
