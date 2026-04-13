@@ -51,13 +51,54 @@ jobs:
             Multi-agent AI terminal workspace — run Claude Code, Codex CLI, Gemini CLI, and more, side-by-side.
 
             ### Downloads
-            | Platform | File |
-            |---|---|
-            | Linux x86_64 | `.AppImage` / `.deb` |
-            | Windows x86_64 | `.msi` / `.exe` |
-            | Windows ARM64 | `.msi` / `.exe` |
+            | Platform | Architecture | File |
+            |---|---|---|
+            | 🐧 Linux | x86_64 | `.AppImage` / `.deb` |
+            | 🐧 Linux | ARM64  | `.AppImage` / `.deb` |
+            | 🪟 Windows | x86_64 | `.msi` / `.exe` |
+            | 🪟 Windows | ARM64  | `.msi` / `.exe` |
 
             See the **[Installation guide](https://github.com/abhay-byte/nexus#install)** in the README.
+          releaseDraft: false
+          prerelease: false
+
+  # ─── Linux ARM64 ─────────────────────────────────────────────────────────────
+  build-linux-arm:
+    name: Linux (ARM64)
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux ARM64 system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl wget file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build Tauri app (Linux ARM64)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Nexus ${{ github.ref_name }}"
           releaseDraft: false
           prerelease: false
 
