@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import { KNOWN_AGENTS, PROJECT_SWATCHES } from "../../constants/agents";
 import { MCP_AUTO_INSTALL_AGENT_IDS, MCP_SERVER_PRESETS, createMcpServerFromPreset } from "../../constants/mcpPresets";
 import { getAgentMcpInstallLabel } from "../../lib/projectMcpSync";
 import type {
   AppSettings,
+  AgencyAgentProjectConfig,
   InstalledAgentStatus,
   McpServerConfig,
   Project,
@@ -12,6 +13,12 @@ import type {
 } from "../../types";
 
 type SettingsSection = "appearance" | "terminal" | "session" | "projects" | "agents";
+
+interface AgencyAgentOption {
+  slug: string;
+  name: string;
+  category: string;
+}
 
 interface SettingsWorkspaceProps {
   open: boolean;
@@ -30,6 +37,10 @@ interface SettingsWorkspaceProps {
   onOpenProjectPath: (path: string) => void;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onOpenAddCustomAgent: () => void;
+  onBootstrapSpecKit: (projectPath: string, agentId: string) => Promise<string>;
+  onInstallCaveman: (agentId: string) => Promise<string>;
+  onListAgencyAgents: () => Promise<AgencyAgentOption[]>;
+  onSyncProjectAgencyAgent: (projectPath: string, slug: string, enabled: boolean) => Promise<string>;
 }
 
 const SETTINGS_SECTIONS: Array<{
@@ -44,6 +55,10 @@ const SETTINGS_SECTIONS: Array<{
   { id: "projects", label: "Projects", eyebrow: "Workspace", accent: "#ffcc00" },
   { id: "agents", label: "Agents & MCP", eyebrow: "Runtime", accent: "#10B981" },
 ];
+
+const SPEC_KIT_SUPPORTED_AGENT_IDS = new Set(["codex", "claude-code", "gemini-cli"]);
+const CAVEMAN_ONE_CLICK_AGENT_IDS = new Set(["claude-code", "gemini-cli", "cline", "kiro"]);
+const DEFAULT_AGENCY_AGENT_SLUG = "agents-orchestrator";
 
 // ─── Shared small components ────────────────────────────────────────────────
 
@@ -77,6 +92,41 @@ function TextInput({
       className={`w-full border-4 border-[#1a1a1a] bg-white px-4 py-3 text-[#1a1a1a] outline-none focus:border-[#0055ff] placeholder:text-[#1a1a1a]/35 dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8] dark:placeholder:text-[#f5f0e8]/35 ${mono ? "font-mono text-sm" : "font-body text-base font-semibold"}`}
     />
   );
+}
+
+function formatRuntimeShellLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized === "shell" || normalized === "auto") {
+    return "auto";
+  }
+  if (normalized === "pwsh" || normalized === "pwsh.exe" || normalized === "powershell" || normalized === "powershell.exe") {
+    return "PowerShell";
+  }
+  if (normalized === "cmd" || normalized === "cmd.exe") {
+    return "CMD";
+  }
+  return value.split(/[\\/]/).pop() || value;
+}
+
+function formatRuntimeOsLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized === "desktop") {
+    const platform = navigator.platform.toLowerCase();
+    if (platform.includes("win")) {
+      return "windows";
+    }
+    if (platform.includes("mac")) {
+      return "macOS";
+    }
+    if (platform.includes("linux") || platform.includes("x11")) {
+      return "linux";
+    }
+    return navigator.platform || "desktop";
+  }
+  if (normalized === "macos") {
+    return "macOS";
+  }
+  return value;
 }
 
 function NumberInput({
@@ -123,6 +173,96 @@ function TextArea({
     />
   );
 }
+
+function AgencyDropdown({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string; count?: number; category?: string }>;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+  const displayLabel = selected?.label ?? placeholder ?? "Select...";
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full border-4 border-[#1a1a1a] bg-white px-4 py-3 font-mono text-sm text-[#1a1a1a] outline-none hover:bg-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:bg-[#2a2a2a] flex items-center justify-between gap-2"
+      >
+        <span className="flex items-center gap-2 truncate">
+          {selected?.category ? (
+            <span className="shrink-0 border-2 border-[#1a1a1a] bg-[#ffcc00] px-1.5 py-0.5 font-headline text-[9px] font-black uppercase tracking-wider text-[#1a1a1a] dark:border-[#f5f0e8]">
+              {selected.category}
+            </span>
+          ) : null}
+          <span className="truncate">{displayLabel}</span>
+        </span>
+        <span
+          className="material-symbols-outlined shrink-0 text-base transition-transform duration-150"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+        >
+          expand_more
+        </span>
+      </button>
+
+      {open ? (
+        <div className="absolute top-full left-0 right-0 z-[200] mt-1 max-h-[260px] overflow-y-auto border-4 border-[#1a1a1a] bg-white shadow-[6px_6px_0px_0px_#1a1a1a] dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:shadow-[6px_6px_0px_0px_#f5f0e8]">
+          {options.length === 0 ? (
+            <div className="px-4 py-3 font-mono text-xs opacity-50">No options</div>
+          ) : (
+            options.map((option) => {
+              const isSelected = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => { onChange(option.value); setOpen(false); }}
+                  className={`w-full px-4 py-3 text-left font-mono text-sm flex items-center justify-between gap-2 border-b-2 border-[#1a1a1a]/10 dark:border-[#f5f0e8]/10 last:border-0 ${
+                    isSelected
+                      ? "bg-[#ffcc00] text-[#1a1a1a] dark:bg-[#ffcc00] dark:text-[#1a1a1a]"
+                      : "text-[#1a1a1a] hover:bg-[#f5f0e8] dark:text-[#f5f0e8] dark:hover:bg-[#2a2a2a]"
+                  }`}
+                >
+                  <span className="truncate">{option.label}</span>
+                  {option.count !== undefined ? (
+                    <span className="shrink-0 border-2 border-[#1a1a1a]/30 px-1.5 py-0.5 font-headline text-[9px] font-black uppercase dark:border-[#f5f0e8]/30">
+                      {option.count}
+                    </span>
+                  ) : null}
+                  {isSelected ? (
+                    <span className="material-symbols-outlined shrink-0 text-sm text-[#1a1a1a]">check</span>
+                  ) : null}
+                </button>
+              );
+            })
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 
 function ToggleChip({
   active,
@@ -211,6 +351,29 @@ function PresetCard({
         Upstream Docs
       </a>
     </article>
+  );
+}
+
+function ActionFeedback({
+  title,
+  message,
+  tone = "neutral",
+}: {
+  title: string;
+  message: string;
+  tone?: "neutral" | "success" | "error";
+}) {
+  const accent =
+    tone === "success" ? "#10B981" : tone === "error" ? "#e63b2e" : "#0055ff";
+
+  return (
+    <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+      <span className="block h-2 w-10" style={{ backgroundColor: accent }} />
+      <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">{title}</p>
+      <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed opacity-80">
+        {message}
+      </pre>
+    </div>
   );
 }
 
@@ -325,9 +488,11 @@ function AppearanceSection({
 
 function TerminalSection({
   settings,
+  runtimeInfo,
   onUpdateSettings,
 }: {
   settings: AppSettings;
+  runtimeInfo: RuntimeInfo;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
 }) {
   const cursorStyles: Array<{ value: AppSettings["cursorStyle"]; label: string }> = [
@@ -346,11 +511,11 @@ function TerminalSection({
         <TextInput
           value={settings.shellOverride}
           onChange={(v) => onUpdateSettings({ shellOverride: v })}
-          placeholder="/bin/bash  (leave blank for auto-detect)"
+          placeholder={runtimeInfo.os === "windows" ? "pwsh.exe  (leave blank for auto-detect)" : "/bin/bash  (leave blank for auto-detect)"}
           mono
         />
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#1a1a1a]/50 dark:text-[#f5f0e8]/50">
-          Leave blank to use system default
+          {runtimeInfo.os === "windows" ? "Leave blank to prefer PowerShell, then fall back to cmd.exe" : "Leave blank to use system default"}
         </p>
       </div>
 
@@ -457,6 +622,9 @@ function ProjectsPanel({
   onUpdateProject,
   onRemoveProject,
   onOpenProjectPath,
+  onBootstrapSpecKit,
+  onListAgencyAgents,
+  onSyncProjectAgencyAgent,
 }: {
   projects: Project[];
   activeProjectId: string | null;
@@ -466,10 +634,23 @@ function ProjectsPanel({
   onUpdateProject: (id: string, patch: Partial<Omit<Project, "id" | "createdAt">>) => Promise<void>;
   onRemoveProject: (id: string) => Promise<void>;
   onOpenProjectPath: (path: string) => void;
+  onBootstrapSpecKit: (projectPath: string, agentId: string) => Promise<string>;
+  onListAgencyAgents: () => Promise<AgencyAgentOption[]>;
+  onSyncProjectAgencyAgent: (projectPath: string, slug: string, enabled: boolean) => Promise<string>;
 }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     activeProjectId ?? projects[0]?.id ?? null,
   );
+  const [specKitAgentId, setSpecKitAgentId] = useState<string>("codex");
+  const [specKitStatus, setSpecKitStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [specKitRunning, setSpecKitRunning] = useState(false);
+  const [agencyAgents, setAgencyAgents] = useState<AgencyAgentOption[]>([]);
+  const [agencyLoading, setAgencyLoading] = useState(false);
+  const [agencyFetched, setAgencyFetched] = useState(false);
+  const [agencyStatus, setAgencyStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [agencyRunning, setAgencyRunning] = useState(false);
+  const [agencyCategory, setAgencyCategory] = useState<string>("");
+  const agencyFetchRef = useRef(false);
 
   useEffect(() => {
     if (!projects.length) { setSelectedProjectId(null); return; }
@@ -481,86 +662,120 @@ function ProjectsPanel({
     () => projects.find((p) => p.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
   );
+  const selectedAgencyConfig: AgencyAgentProjectConfig = selectedProject?.agencyAgent ?? {
+    enabled: false,
+    selectedAgentSlug: DEFAULT_AGENCY_AGENT_SLUG,
+  };
 
   const allAgents = useMemo(() => [...KNOWN_AGENTS, ...settings.customAgents], [settings.customAgents]);
   const installedStatus = useMemo(
     () => new Map(installedAgents.map((e) => [e.id, e.installed])),
     [installedAgents],
   );
-  const autoSyncAgentNames = useMemo(
-    () =>
-      new Map(
-        allAgents
-          .filter((agent) => MCP_AUTO_INSTALL_AGENT_IDS.includes(agent.id))
-          .map((agent) => [agent.id, agent.name]),
-      ),
+  const specKitAgents = useMemo(
+    () => allAgents.filter((agent) => SPEC_KIT_SUPPORTED_AGENT_IDS.has(agent.id)),
     [allAgents],
   );
+
+  useEffect(() => {
+    if (!selectedProject) {
+      return;
+    }
+
+    const preferred = selectedProject.defaultAgents.find((agentId) =>
+      specKitAgents.some((agent) => agent.id === agentId),
+    );
+    setSpecKitAgentId((current) => {
+      if (current && specKitAgents.some((agent) => agent.id === current)) {
+        return current;
+      }
+      return preferred ?? specKitAgents[0]?.id ?? "codex";
+    });
+  }, [selectedProject, specKitAgents]);
+
+  // Agency agents are NOT loaded on mount — loading requires a git clone which hangs the UI.
+  // User must click "Load Catalog" to trigger the fetch.
+  const fetchAgencyAgents = () => {
+    if (agencyFetchRef.current) return;
+    agencyFetchRef.current = true;
+    setAgencyLoading(true);
+    setAgencyFetched(false);
+    void onListAgencyAgents()
+      .then((entries) => {
+        setAgencyAgents(entries);
+        setAgencyFetched(true);
+        // Set default category if not set
+        setAgencyCategory((curr) => {
+          if (curr) return curr;
+          return entries[0]?.category ?? "";
+        });
+      })
+      .catch(() => {
+        setAgencyAgents([]);
+        setAgencyFetched(true);
+      })
+      .finally(() => {
+        setAgencyLoading(false);
+        agencyFetchRef.current = false;
+      });
+  };
 
   const patchProject = (patch: Partial<Omit<Project, "id" | "createdAt">>) => {
     if (!selectedProject) return;
     void onUpdateProject(selectedProject.id, patch);
   };
 
-  const updateServer = (serverId: string, patch: Partial<McpServerConfig>) => {
-    if (!selectedProject) return;
-    patchProject({
-      mcpServers: selectedProject.mcpServers.map((s) =>
-        s.id === serverId ? { ...s, ...patch } : s,
-      ),
-    });
+  const runSpecKitBootstrap = async () => {
+    if (!selectedProject) {
+      return;
+    }
+
+    setSpecKitRunning(true);
+    setSpecKitStatus(null);
+    try {
+      const message = await onBootstrapSpecKit(selectedProject.path, specKitAgentId);
+      setSpecKitStatus({ tone: "success", message });
+    } catch (error) {
+      setSpecKitStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSpecKitRunning(false);
+    }
   };
 
-  const removeServer = (serverId: string) => {
-    if (!selectedProject) return;
-    patchProject({ mcpServers: selectedProject.mcpServers.filter((s) => s.id !== serverId) });
-  };
-
-  const addServer = () => {
-    if (!selectedProject) return;
-    patchProject({
-      mcpServers: [
-        ...selectedProject.mcpServers,
-        {
-          id: `mcp-${nanoid(6)}`,
-          name: "NEW_SERVER",
-          command: "",
-          args: [],
-          env: {},
-          enabledAgentIds: selectedProject.defaultAgents,
-        },
-      ],
-    });
-  };
-
-  const addPresetServer = (presetId: string) => {
-    if (!selectedProject) return;
-    const preset = MCP_SERVER_PRESETS.find((entry) => entry.id === presetId);
-    if (!preset) return;
-
-    const nextServer = createMcpServerFromPreset(preset, selectedProject);
-    const alreadyExists = selectedProject.mcpServers.some(
-      (server) => server.name === nextServer.name && server.command === nextServer.command,
-    );
-    if (alreadyExists) {
+  const patchAgencyConfig = (patch: Partial<AgencyAgentProjectConfig>) => {
+    if (!selectedProject) {
       return;
     }
 
     patchProject({
-      mcpServers: [...selectedProject.mcpServers, nextServer],
+      agencyAgent: {
+        ...selectedAgencyConfig,
+        ...patch,
+      },
     });
   };
 
-  const removePresetServer = (presetId: string) => {
-    if (!selectedProject) return;
-    const preset = MCP_SERVER_PRESETS.find((entry) => entry.id === presetId);
-    if (!preset) return;
+  const syncAgencyAgent = async (enabled: boolean, slug: string) => {
+    if (!selectedProject) {
+      return;
+    }
 
-    patchProject({
-      mcpServers: selectedProject.mcpServers.filter(
-        (server) => !(server.name === preset.name && server.command === preset.command),
-      ),
-    });
+    setAgencyRunning(true);
+    setAgencyStatus(null);
+    try {
+      const message = await onSyncProjectAgencyAgent(selectedProject.path, slug, enabled);
+      setAgencyStatus({ tone: "success", message });
+    } catch (error) {
+      setAgencyStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setAgencyRunning(false);
+    }
   };
 
   return (
@@ -640,7 +855,7 @@ function ProjectsPanel({
               {/* Stats */}
               <div className="grid grid-cols-3 gap-3">
                 <StatTile label="Default Agents" value={`${selectedProject.defaultAgents.length}`} accent="#ffcc00" />
-                <StatTile label="MCP Servers" value={`${selectedProject.mcpServers.length}`} accent="#0055ff" />
+                <StatTile label="Color" value={selectedProject.color.toUpperCase()} accent={selectedProject.color} />
                 <StatTile label="Active" value={selectedProject.id === activeProjectId ? "YES" : "NO"} accent={selectedProject.color} />
               </div>
 
@@ -713,176 +928,214 @@ function ProjectsPanel({
                 </div>
               </div>
 
-              {/* MCP Servers */}
-              <div className="space-y-5 border-t-4 border-[#1a1a1a] pt-5 dark:border-[#f5f0e8]">
+              <div className="space-y-4 border-t-4 border-[#1a1a1a] pt-5 dark:border-[#f5f0e8]">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">MCP Server Registry</p>
-                    <p className="mt-1 font-headline text-2xl font-black uppercase leading-none">Context Bridge</p>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Workflow Bootstrap</p>
+                    <p className="mt-1 font-headline text-2xl font-black uppercase leading-none">Spec Kit</p>
                     <p className="mt-2 max-w-2xl font-body text-sm leading-relaxed opacity-70">
-                      Nexus persists MCP servers per project. For enabled <span className="font-mono">{Array.from(autoSyncAgentNames.values()).join(" + ")}</span> agents it also installs or injects the MCP wiring Nexus sessions need. Agents without an install mode stay manual.
-                    </p>
-                    <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] opacity-60">
-                      Guide: docs/agent-mcp-skills-guide.md
+                      Initialize GitHub Spec Kit in this project for Codex, Claude Code, or Gemini CLI. Nexus runs the upstream <span className="font-mono">specify init --here --force --ai ...</span> bootstrap, so the real <span className="font-mono">.specify/</span> files are merged into the current project without the interactive non-empty-directory prompt.
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={addServer}
-                    className="border-4 border-[#1a1a1a] bg-[#ffcc00] px-4 py-2 font-headline text-sm font-black uppercase hover:bg-[#1a1a1a] hover:text-[#f5f0e8] dark:border-[#f5f0e8]"
+                    onClick={() => void runSpecKitBootstrap()}
+                    disabled={specKitRunning || !specKitAgents.length}
+                    className="border-4 border-[#1a1a1a] bg-[#0055ff] px-4 py-2 font-headline text-sm font-black uppercase text-white hover:bg-[#1a1a1a] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8]"
                   >
-                    Add MCP Server
+                    {specKitRunning ? "Bootstrapping..." : "Bootstrap Spec Kit"}
                   </button>
                 </div>
 
-                <div className="space-y-3">
-                  <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Preset Catalog</p>
-                    <p className="mt-1 font-body text-sm leading-relaxed opacity-70">
-                      These presets come from upstream MCP documentation and are tuned for Nexus’s current stdio `command + args + env` model plus per-agent auto-install adapters.
-                    </p>
+                <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
+                  <div className="space-y-2">
+                    <FieldLabel>Target Agent</FieldLabel>
+                    <div className="flex flex-wrap gap-3">
+                      {specKitAgents.map((agent) => {
+                        const installed = settings.customAgents.some((entry) => entry.id === agent.id)
+                          ? true
+                          : installedStatus.get(agent.id) ?? false;
+                        return (
+                          <ToggleChip
+                            key={`spec-kit-${agent.id}`}
+                            active={specKitAgentId === agent.id}
+                            label={agent.name}
+                            meta={installed ? "Installed" : "Not detected"}
+                            color={agent.color}
+                            onClick={() => setSpecKitAgentId(agent.id)}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="grid gap-3 xl:grid-cols-2">
-                    {MCP_SERVER_PRESETS.map((preset) => {
-                      const autoInstall = (preset.autoInstallAgents ?? [])
-                        .map((agentId) => autoSyncAgentNames.get(agentId))
-                        .filter(Boolean)
-                        .join(", ");
-                      const active = selectedProject.mcpServers.some(
-                        (server) => server.name === preset.name && server.command === preset.command,
-                      );
-                      return (
-                        <PresetCard
-                          key={preset.id}
-                          title={preset.name}
-                          description={preset.description}
-                          docsUrl={preset.docsUrl}
-                          active={active}
-                          meta={`command: ${preset.command}${autoInstall ? ` • auto-install: ${autoInstall}` : ""}`}
-                          onToggle={() => {
-                            if (active) {
-                              removePresetServer(preset.id);
-                              return;
-                            }
-                            addPresetServer(preset.id);
-                          }}
-                        />
-                      );
-                    })}
+
+                  <div className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-4 dark:border-[#f5f0e8] dark:bg-[#111111]">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Result</p>
+                    <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
+                      Adds agent-facing Spec Kit commands and the real <span className="font-mono">.specify/</span> workflow skeleton to this project.
+                    </p>
                   </div>
                 </div>
 
-                {selectedProject.mcpServers.length ? (
-                  <div className="space-y-5">
-                    {selectedProject.mcpServers.map((server, index) => (
-                      <article key={server.id} className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-5 dark:border-[#f5f0e8] dark:bg-[#111111]">
-                        <div className="flex items-start justify-between gap-4 border-b-4 border-[#1a1a1a] pb-4 dark:border-[#f5f0e8]">
-                          <div>
-                            <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">
-                              Server {String(index + 1).padStart(2, "0")}
-                            </p>
-                            <h4 className="mt-1 font-headline text-2xl font-black uppercase leading-none">
-                              {server.name || "Unnamed Server"}
-                            </h4>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeServer(server.id)}
-                            className="border-4 border-[#1a1a1a] bg-white px-3 py-2 font-headline text-sm font-black uppercase hover:bg-[#e63b2e] hover:text-white dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8]"
-                          >
-                            Remove
-                          </button>
-                        </div>
+                {specKitStatus ? (
+                  <ActionFeedback
+                    title="Spec Kit Result"
+                    message={specKitStatus.message}
+                    tone={specKitStatus.tone}
+                  />
+                ) : null}
+              </div>
 
-                        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-4">
-                            <div className="space-y-2">
-                              <FieldLabel>Server Name</FieldLabel>
-                              <TextInput value={server.name} onChange={(v) => updateServer(server.id, { name: v })} />
-                            </div>
-                            <div className="space-y-2">
-                              <FieldLabel>Command</FieldLabel>
-                              <TextInput value={server.command} onChange={(v) => updateServer(server.id, { command: v })} mono />
-                            </div>
-                            <div className="space-y-2">
-                              <FieldLabel>Arguments</FieldLabel>
-                              <TextInput
-                                value={formatArgs(server.args)}
-                                onChange={(v) => updateServer(server.id, { args: parseArgsInput(v) })}
-                                mono
-                              />
-                            </div>
-                          </div>
-
-                          <div className="space-y-4">
-                            <div className="space-y-2">
-                              <FieldLabel>Environment Variables</FieldLabel>
-                              <TextArea
-                                value={formatEnv(server.env)}
-                                onChange={(v) => updateServer(server.id, { env: parseEnvInput(v) })}
-                                placeholder={"API_KEY=...\nDEBUG=true"}
-                                minRows={4}
-                              />
-                            </div>
-                            <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
-                              <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Summary</p>
-                              <div className="mt-3 grid grid-cols-3 gap-3">
-                                {[
-                                  { label: "Args", value: server.args.length },
-                                  { label: "Env", value: countConfiguredEnv(server.env) },
-                                  { label: "Agents", value: server.enabledAgentIds.length },
-                                ].map(({ label, value }) => (
-                                  <div key={label}>
-                                    <p className="font-mono text-[10px] uppercase tracking-[0.25em] opacity-60">{label}</p>
-                                    <p className="mt-1 font-headline text-2xl font-black leading-none">{value}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 space-y-2">
-                          <FieldLabel>Enabled Agents</FieldLabel>
-                          <div className="flex flex-wrap gap-3">
-                            {allAgents.map((agent) => {
-                              const enabled = server.enabledAgentIds.includes(agent.id);
-                              return (
-                              <ToggleChip
-                                  key={`${server.id}-${agent.id}`}
-                                  active={enabled}
-                                  label={agent.name}
-                                  meta={`${agent.command} • ${getAgentMcpInstallLabel(agent.id)}`}
-                                  color={agent.color}
-                                  onClick={() => {
-                                    const enabledAgentIds = enabled
-                                      ? server.enabledAgentIds.filter((e) => e !== agent.id)
-                                      : [...server.enabledAgentIds, agent.id];
-                                    updateServer(server.id, { enabledAgentIds });
-                                  }}
-                                />
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="border-4 border-dashed border-[#1a1a1a] bg-[#f5f0e8] p-8 text-center dark:border-[#f5f0e8] dark:bg-[#111111]">
-                    <p className="font-headline text-2xl font-black uppercase">No MCP servers yet</p>
-                    <p className="mx-auto mt-3 max-w-sm font-body text-sm leading-relaxed opacity-70">
-                      Register a server and explicitly opt agents into it to keep runtimes isolated.
+              <div className="space-y-4 border-t-4 border-[#1a1a1a] pt-5 dark:border-[#f5f0e8]">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Project Add-On</p>
+                    <p className="mt-1 font-headline text-2xl font-black uppercase leading-none">Agency Agent</p>
+                    <p className="mt-2 max-w-2xl font-body text-sm leading-relaxed opacity-70">
+                      Install one upstream specialist from <span className="font-mono">agency-agents</span> into this project as a Nexus-managed root file at <span className="font-mono">AGENCY.md</span>.
                     </p>
                   </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => void syncAgencyAgent(selectedAgencyConfig.enabled, selectedAgencyConfig.selectedAgentSlug)}
+                    disabled={agencyRunning || agencyLoading || !selectedAgencyConfig.enabled}
+                    className="border-4 border-[#1a1a1a] bg-[#10B981] px-4 py-2 font-headline text-sm font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8]"
+                  >
+                    {agencyRunning ? "Syncing..." : "Sync Agency File"}
+                  </button>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
+                  <div className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-4 dark:border-[#f5f0e8] dark:bg-[#111111]">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Toggle</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextEnabled = !selectedAgencyConfig.enabled;
+                        patchAgencyConfig({ enabled: nextEnabled });
+                        void syncAgencyAgent(nextEnabled, selectedAgencyConfig.selectedAgentSlug);
+                      }}
+                      className={`mt-3 relative h-8 w-16 border-4 border-[#1a1a1a] transition-none dark:border-[#f5f0e8] ${selectedAgencyConfig.enabled ? "bg-[#10B981]" : "bg-white dark:bg-[#1a1a1a]"}`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-5 w-5 border-2 border-[#1a1a1a] bg-[#1a1a1a] transition-none dark:border-[#f5f0e8] dark:bg-[#f5f0e8] ${selectedAgencyConfig.enabled ? "right-0.5" : "left-0.5"}`}
+                      />
+                    </button>
+                    <p className="mt-3 font-body text-sm leading-relaxed opacity-80">
+                      {selectedAgencyConfig.enabled ? "Enabled for this project" : "Disabled for this project"}
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Two-tier category + specialist dropdowns */}
+                    {!agencyFetched && !agencyLoading ? (
+                      <div className="border-4 border-dashed border-[#1a1a1a] bg-[#f5f0e8] p-5 text-center dark:border-[#f5f0e8] dark:bg-[#111111]">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60 mb-3">
+                          Agency specialist catalog requires a network fetch
+                        </p>
+                        <button
+                          type="button"
+                          onClick={fetchAgencyAgents}
+                          className="border-4 border-[#1a1a1a] bg-[#0055ff] px-4 py-2 font-headline text-sm font-black uppercase text-white hover:bg-[#1a1a1a] dark:border-[#f5f0e8]"
+                        >
+                          Load Catalog
+                        </button>
+                      </div>
+                    ) : agencyLoading ? (
+                      <div className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-5 dark:border-[#f5f0e8] dark:bg-[#111111]">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60 animate-pulse">
+                          Fetching upstream agency catalog via git clone...
+                        </p>
+                        <p className="mt-2 font-body text-xs opacity-50">
+                          This performs a shallow git clone of the agency-agents repository. May take a few seconds.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Category dropdown */}
+                        <div className="space-y-2">
+                          <FieldLabel>Agency Category</FieldLabel>
+                          <AgencyDropdown
+                            value={agencyCategory}
+                            onChange={(cat) => {
+                              setAgencyCategory(cat);
+                              // Auto-select first specialist in new category
+                              const firstInCat = agencyAgents.find((a) => a.category === cat);
+                              if (firstInCat) {
+                                patchAgencyConfig({ selectedAgentSlug: firstInCat.slug });
+                                if (selectedAgencyConfig.enabled) {
+                                  void syncAgencyAgent(true, firstInCat.slug);
+                                }
+                              }
+                            }}
+                            options={Array.from(new Set(agencyAgents.map((a) => a.category))).map((cat) => ({
+                              value: cat,
+                              label: cat,
+                              count: agencyAgents.filter((a) => a.category === cat).length,
+                            }))}
+                            placeholder="Select category..."
+                          />
+                        </div>
+                        {/* Specialist dropdown */}
+                        <div className="space-y-2">
+                          <FieldLabel>Agency Specialist</FieldLabel>
+                          <AgencyDropdown
+                            value={selectedAgencyConfig.selectedAgentSlug}
+                            onChange={(value) => {
+                              patchAgencyConfig({ selectedAgentSlug: value });
+                              if (selectedAgencyConfig.enabled) {
+                                void syncAgencyAgent(true, value);
+                              }
+                            }}
+                            options={agencyAgents
+                              .filter((a) => !agencyCategory || a.category === agencyCategory)
+                              .map((agent) => ({
+                                value: agent.slug,
+                                label: agent.name,
+                                category: agent.category,
+                              }))}
+                            placeholder="Select specialist..."
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { agencyFetchRef.current = false; fetchAgencyAgents(); }}
+                          className="w-full border-4 border-[#1a1a1a] bg-[#f5f0e8] px-3 py-2 font-headline text-xs font-black uppercase hover:bg-[#ffcc00] dark:border-[#f5f0e8] dark:bg-[#2a2a2a] dark:text-[#f5f0e8]"
+                        >
+                          Refresh Catalog
+                        </button>
+                      </>
+                    )}
+                    <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Project Files</p>
+                      <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
+                        Nexus writes the selected specialist to <span className="font-mono">AGENCY.md</span> and keeps a manifest at <span className="font-mono">.nexus/agency-agents.json</span>.
+                      </p>
+                      <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
+                        Nexus only overwrites an existing <span className="font-mono">AGENCY.md</span> when that file was already created by Nexus, so existing manual project files stay protected.
+                      </p>
+                      <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
+                        This is project-scoped and PowerShell-safe because Nexus handles the file install directly instead of relying on upstream bash installers.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {agencyStatus ? (
+                  <ActionFeedback
+                    title="Agency Agent Result"
+                    message={agencyStatus.message}
+                    tone={agencyStatus.tone}
+                  />
+                ) : null}
               </div>
+
             </div>
           ) : (
             <div className="flex h-64 flex-col items-center justify-center border-4 border-dashed border-[#1a1a1a] bg-[#f5f0e8] p-10 text-center dark:border-[#f5f0e8] dark:bg-[#111111]">
               <p className="font-headline text-3xl font-black uppercase">No project registered</p>
               <p className="mt-3 max-w-xs font-body text-sm leading-relaxed opacity-70">
-                Create a project to configure agents and MCP servers.
+                Create a project to configure its folder, color, and startup agents.
               </p>
               <button
                 type="button"
@@ -902,26 +1155,124 @@ function ProjectsPanel({
 // ─── Agents Panel ────────────────────────────────────────────────────────────
 
 function AgentsPanel({
+  projects,
   settings,
   installedAgents,
   runtimeInfo,
   onUpdateSettings,
   onOpenAddCustomAgent,
+  onInstallCaveman,
 }: {
+  projects: Project[];
   settings: AppSettings;
   installedAgents: InstalledAgentStatus[];
   runtimeInfo: RuntimeInfo;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onOpenAddCustomAgent: () => void;
+  onInstallCaveman: (agentId: string) => Promise<string>;
 }) {
   const agentCatalog = useMemo(() => [...KNOWN_AGENTS, ...settings.customAgents], [settings.customAgents]);
   const installedStatus = useMemo(
     () => new Map(installedAgents.map((e) => [e.id, e.installed])),
     [installedAgents],
   );
+  const autoSyncAgentNames = useMemo(
+    () =>
+      new Map(
+        agentCatalog
+          .filter((agent) => MCP_AUTO_INSTALL_AGENT_IDS.includes(agent.id))
+          .map((agent) => [agent.id, agent.name]),
+      ),
+    [agentCatalog],
+  );
+  const [cavemanRunningAgentId, setCavemanRunningAgentId] = useState<string | null>(null);
+  const [cavemanStatus, setCavemanStatus] = useState<Record<string, { tone: "success" | "error"; message: string }>>({});
+  const [selectedCavemanAgentId, setSelectedCavemanAgentId] = useState<string>("claude-code");
   const removeCustomAgent = (agentId: string) => {
     onUpdateSettings({ customAgents: settings.customAgents.filter((a) => a.id !== agentId) });
   };
+  const runCavemanInstall = async (agentId: string) => {
+    setCavemanRunningAgentId(agentId);
+    setCavemanStatus((current) => {
+      const next = { ...current };
+      delete next[agentId];
+      return next;
+    });
+    try {
+      const message = await onInstallCaveman(agentId);
+      setCavemanStatus((current) => ({
+        ...current,
+        [agentId]: { tone: "success", message },
+      }));
+    } catch (error) {
+      setCavemanStatus((current) => ({
+        ...current,
+        [agentId]: {
+          tone: "error",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }));
+    } finally {
+      setCavemanRunningAgentId(null);
+    }
+  };
+  const updateServer = (serverId: string, patch: Partial<McpServerConfig>) => {
+    onUpdateSettings({
+      mcpServers: settings.mcpServers.map((server) =>
+        server.id === serverId ? { ...server, ...patch } : server,
+      ),
+    });
+  };
+  const removeServer = (serverId: string) => {
+    onUpdateSettings({
+      mcpServers: settings.mcpServers.filter((server) => server.id !== serverId),
+    });
+  };
+  const addServer = () => {
+    onUpdateSettings({
+      mcpServers: [
+        ...settings.mcpServers,
+        {
+          id: `mcp-${nanoid(6)}`,
+          name: "NEW_SERVER",
+          command: "",
+          args: [],
+          env: {},
+          enabledAgentIds: [],
+        },
+      ],
+    });
+  };
+  const addPresetServer = (presetId: string) => {
+    const preset = MCP_SERVER_PRESETS.find((entry) => entry.id === presetId);
+    if (!preset) return;
+
+    const nextServer = createMcpServerFromPreset(preset);
+    const alreadyExists = settings.mcpServers.some(
+      (server) => server.name === nextServer.name && server.command === nextServer.command,
+    );
+    if (alreadyExists) {
+      return;
+    }
+
+    onUpdateSettings({
+      mcpServers: [...settings.mcpServers, nextServer],
+    });
+  };
+  const removePresetServer = (presetId: string) => {
+    const preset = MCP_SERVER_PRESETS.find((entry) => entry.id === presetId);
+    if (!preset) return;
+
+    onUpdateSettings({
+      mcpServers: settings.mcpServers.filter(
+        (server) => !(server.name === preset.name && server.command === preset.command),
+      ),
+    });
+  };
+  const cavemanDropdownAgents = useMemo(
+    () => agentCatalog.filter((agent) => CAVEMAN_ONE_CLICK_AGENT_IDS.has(agent.id) || agent.id === "codex"),
+    [agentCatalog],
+  );
 
   return (
     <div className="space-y-8">
@@ -945,7 +1296,234 @@ function AgentsPanel({
           value={`${installedAgents.filter((e) => e.installed).length}`}
           accent="#0055ff"
         />
-        <StatTile label="Shell" value={runtimeInfo.shell || "AUTO"} accent="#1a1a1a" />
+        <StatTile label="MCP Servers" value={`${settings.mcpServers.length}`} accent="#10B981" />
+      </div>
+
+      <div className="space-y-5 border-4 border-[#1a1a1a] bg-white p-6 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">MCP Server Registry</p>
+            <p className="mt-1 font-headline text-2xl font-black uppercase leading-none">Global Context Bridge</p>
+            <p className="mt-2 max-w-3xl font-body text-sm leading-relaxed opacity-70">
+              MCP servers now live here and apply to every registered project. Nexus resolves project-scoped values when it syncs agent files or launches runtime-only MCP hosts, so presets like filesystem still target the active project safely.
+            </p>
+            <p className="mt-2 max-w-3xl font-body text-sm leading-relaxed opacity-70">
+              Auto-wired agents: <span className="font-mono">{Array.from(autoSyncAgentNames.values()).join(" + ")}</span>. Manual agents still require their native MCP setup.
+            </p>
+            <p className="mt-2 max-w-3xl font-body text-sm leading-relaxed opacity-70">
+              Codex merges Nexus-managed MCP with `~/.codex/config.toml`. Nexus skips duplicate Codex injections, and `/mcp` entries prefixed with <span className="font-mono">nexus_</span> are the ones injected by Nexus.
+            </p>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] opacity-60">
+              Applies to {projects.length} registered project{projects.length === 1 ? "" : "s"} • Guide: docs/agent-mcp-skills-guide.md
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={addServer}
+            className="border-4 border-[#1a1a1a] bg-[#ffcc00] px-4 py-2 font-headline text-sm font-black uppercase hover:bg-[#1a1a1a] hover:text-[#f5f0e8] dark:border-[#f5f0e8]"
+          >
+            Add MCP Server
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Preset Catalog</p>
+            <p className="mt-1 font-body text-sm leading-relaxed opacity-70">
+              These presets come from upstream MCP documentation and are tuned for Nexus’s current stdio `command + args + env` model plus per-agent auto-install adapters.
+            </p>
+          </div>
+          <div className="grid gap-3 xl:grid-cols-2">
+            {MCP_SERVER_PRESETS.map((preset) => {
+              const autoInstall = (preset.autoInstallAgents ?? [])
+                .map((agentId) => autoSyncAgentNames.get(agentId))
+                .filter(Boolean)
+                .join(", ");
+              const active = settings.mcpServers.some(
+                (server) => server.name === preset.name && server.command === preset.command,
+              );
+              return (
+                <PresetCard
+                  key={preset.id}
+                  title={preset.name}
+                  description={preset.description}
+                  docsUrl={preset.docsUrl}
+                  active={active}
+                  meta={`command: ${preset.command}${autoInstall ? ` • auto-install: ${autoInstall}` : ""}`}
+                  onToggle={() => {
+                    if (active) {
+                      removePresetServer(preset.id);
+                      return;
+                    }
+                    addPresetServer(preset.id);
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {settings.mcpServers.length ? (
+          <div className="space-y-5">
+            {settings.mcpServers.map((server, index) => (
+              <article key={server.id} className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-5 dark:border-[#f5f0e8] dark:bg-[#111111]">
+                <div className="flex items-start justify-between gap-4 border-b-4 border-[#1a1a1a] pb-4 dark:border-[#f5f0e8]">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">
+                      Server {String(index + 1).padStart(2, "0")}
+                    </p>
+                    <h4 className="mt-1 font-headline text-2xl font-black uppercase leading-none">
+                      {server.name || "Unnamed Server"}
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeServer(server.id)}
+                    className="border-4 border-[#1a1a1a] bg-white px-3 py-2 font-headline text-sm font-black uppercase hover:bg-[#e63b2e] hover:text-white dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8]"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <FieldLabel>Server Name</FieldLabel>
+                      <TextInput value={server.name} onChange={(v) => updateServer(server.id, { name: v })} />
+                    </div>
+                    <div className="space-y-2">
+                      <FieldLabel>Command</FieldLabel>
+                      <TextInput value={server.command} onChange={(v) => updateServer(server.id, { command: v })} mono />
+                    </div>
+                    <div className="space-y-2">
+                      <FieldLabel>Arguments</FieldLabel>
+                      <TextInput
+                        value={formatArgs(server.args)}
+                        onChange={(v) => updateServer(server.id, { args: parseArgsInput(v) })}
+                        mono
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <FieldLabel>Environment Variables</FieldLabel>
+                      <TextArea
+                        value={formatEnv(server.env)}
+                        onChange={(v) => updateServer(server.id, { env: parseEnvInput(v) })}
+                        placeholder={"API_KEY=...\nDEBUG=true"}
+                        minRows={4}
+                      />
+                    </div>
+                    <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Summary</p>
+                      <div className="mt-3 grid grid-cols-3 gap-3">
+                        {[
+                          { label: "Args", value: server.args.length },
+                          { label: "Env", value: countConfiguredEnv(server.env) },
+                          { label: "Agents", value: server.enabledAgentIds.length },
+                        ].map(({ label, value }) => (
+                          <div key={label}>
+                            <p className="font-mono text-[10px] uppercase tracking-[0.25em] opacity-60">{label}</p>
+                            <p className="mt-1 font-headline text-2xl font-black leading-none">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <FieldLabel>Enabled Agents</FieldLabel>
+                  <div className="flex flex-wrap gap-3">
+                    {agentCatalog.map((agent) => {
+                      const enabled = server.enabledAgentIds.includes(agent.id);
+                      return (
+                        <ToggleChip
+                          key={`${server.id}-${agent.id}`}
+                          active={enabled}
+                          label={agent.name}
+                          meta={`${agent.command} • ${getAgentMcpInstallLabel(agent.id)}`}
+                          color={agent.color}
+                          onClick={() => {
+                            const enabledAgentIds = enabled
+                              ? server.enabledAgentIds.filter((entry) => entry !== agent.id)
+                              : [...server.enabledAgentIds, agent.id];
+                            updateServer(server.id, { enabledAgentIds });
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="border-4 border-dashed border-[#1a1a1a] bg-[#f5f0e8] p-8 text-center dark:border-[#f5f0e8] dark:bg-[#111111]">
+            <p className="font-headline text-2xl font-black uppercase">No MCP servers yet</p>
+            <p className="mx-auto mt-3 max-w-xl font-body text-sm leading-relaxed opacity-70">
+              Add a shared server here and Nexus will wire or inject it across every project for the agents you enable.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-4 border-4 border-[#1a1a1a] bg-white p-6 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Agent Add-On</p>
+            <p className="mt-1 font-headline text-2xl font-black uppercase leading-none">Caveman</p>
+            <p className="mt-2 max-w-3xl font-body text-sm leading-relaxed opacity-70">
+              Caveman is the terse-response / prompt-compression add-on. Use this installer instead of hunting through individual agent cards.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void runCavemanInstall(selectedCavemanAgentId)}
+            disabled={cavemanRunningAgentId === selectedCavemanAgentId || (!CAVEMAN_ONE_CLICK_AGENT_IDS.has(selectedCavemanAgentId) && selectedCavemanAgentId !== "codex")}
+            className="border-4 border-[#1a1a1a] bg-[#10B981] px-4 py-2 font-headline text-sm font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8]"
+          >
+            {cavemanRunningAgentId === selectedCavemanAgentId ? "Installing..." : "Install Caveman"}
+          </button>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="space-y-2">
+            <FieldLabel>Target Agent</FieldLabel>
+            <div className="flex flex-wrap gap-3">
+              {cavemanDropdownAgents.map((agent) => (
+                <button
+                  key={`caveman-${agent.id}`}
+                  type="button"
+                  onClick={() => setSelectedCavemanAgentId(agent.id)}
+                  className={`border-4 px-5 py-3 font-headline text-sm font-black uppercase ${
+                    selectedCavemanAgentId === agent.id
+                      ? "border-[#1a1a1a] bg-[#1a1a1a] text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]"
+                      : "border-[#1a1a1a] bg-white text-[#1a1a1a] hover:bg-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#2a2a2a] dark:text-[#f5f0e8]"
+                  }`}
+                >
+                  {agent.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-4 dark:border-[#f5f0e8] dark:bg-[#111111]">
+            <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Install Notes</p>
+            <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
+              Claude, Gemini, Cline, and Kiro have one-click install paths. Codex still uses the upstream local-plugin flow, so Nexus only documents that manual route.
+            </p>
+          </div>
+        </div>
+
+        {cavemanStatus[selectedCavemanAgentId] ? (
+          <ActionFeedback
+            title="Caveman Result"
+            message={cavemanStatus[selectedCavemanAgentId].message}
+            tone={cavemanStatus[selectedCavemanAgentId].tone}
+          />
+        ) : null}
       </div>
 
       {/* Runtime sidebar + agent list */}
@@ -1017,6 +1595,52 @@ function AgentsPanel({
                     </dl>
                   </div>
                 </div>
+
+                <div className="mt-4 space-y-4 border-t-4 border-[#1a1a1a] pt-4 dark:border-[#f5f0e8]">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Agent Add-On</p>
+                      <p className="mt-1 font-headline text-xl font-black uppercase leading-none">Caveman</p>
+                      <p className="mt-2 font-body text-sm leading-relaxed opacity-70">
+                        Install the upstream Caveman add-on for agents with a documented one-click flow. Nexus currently automates Claude Code, Gemini CLI, Cline, and Kiro.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void runCavemanInstall(agent.id)}
+                      disabled={cavemanRunningAgentId === agent.id || !CAVEMAN_ONE_CLICK_AGENT_IDS.has(agent.id)}
+                      className="border-4 border-[#1a1a1a] bg-[#10B981] px-4 py-2 font-headline text-sm font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8] dark:text-[#1a1a1a]"
+                    >
+                      {cavemanRunningAgentId === agent.id ? "Installing..." : "Install Caveman"}
+                    </button>
+                  </div>
+
+                  {CAVEMAN_ONE_CLICK_AGENT_IDS.has(agent.id) ? (
+                    <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Install Mode</p>
+                      <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
+                        Nexus runs the upstream install command for {agent.name}. You may still need to restart the agent tool or open a fresh session after install.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Manual Setup</p>
+                      <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
+                        {agent.id === "codex"
+                          ? "Codex Caveman still needs the upstream local-plugin flow inside a cloned Caveman repo. Nexus documents that path but does not automate it yet."
+                          : "Nexus does not have a verified upstream one-click Caveman install for this agent yet. Use the guide for the manual path."}
+                      </p>
+                    </div>
+                  )}
+
+                  {cavemanStatus[agent.id] ? (
+                    <ActionFeedback
+                      title="Caveman Result"
+                      message={cavemanStatus[agent.id].message}
+                      tone={cavemanStatus[agent.id].tone}
+                    />
+                  ) : null}
+                </div>
               </article>
             );
           })}
@@ -1026,19 +1650,19 @@ function AgentsPanel({
         <aside className="space-y-4">
           <div className="border-4 border-[#1a1a1a] bg-[#1a1a1a] p-5 text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]">
             <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Runtime Info</p>
-            <p className="mt-3 font-headline text-3xl font-black uppercase leading-none">{runtimeInfo.os}</p>
+            <p className="mt-3 font-headline text-3xl font-black uppercase leading-none">{formatRuntimeOsLabel(runtimeInfo.os)}</p>
             <p className="mt-2 font-body text-sm leading-relaxed">
-              Current shell: <span className="font-mono">{runtimeInfo.shell || "auto"}</span>
+              Current shell: <span className="font-mono">{formatRuntimeShellLabel(runtimeInfo.shell)}</span>
             </p>
           </div>
 
           <div className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-5 dark:border-[#f5f0e8] dark:bg-[#111111] dark:text-[#f5f0e8]">
             <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">MCP Strategy</p>
             <p className="mt-3 font-headline text-base font-black uppercase leading-tight">
-              Configure servers per project. Configure runtime defaults here.
+              Configure servers once here. Nexus applies them everywhere.
             </p>
             <p className="mt-3 font-body text-sm leading-relaxed opacity-70">
-              The Projects tab owns server definitions. This tab sets how agents launch and whether they are viable MCP hosts.
+              The Agents &amp; MCP tab owns the shared server registry, runtime defaults, and agent compatibility hints.
             </p>
           </div>
         </aside>
@@ -1063,6 +1687,10 @@ export function SettingsWorkspace({
   onOpenProjectPath,
   onUpdateSettings,
   onOpenAddCustomAgent,
+  onBootstrapSpecKit,
+  onInstallCaveman,
+  onListAgencyAgents,
+  onSyncProjectAgencyAgent,
 }: SettingsWorkspaceProps) {
   const [section, setSection] = useState<SettingsSection>("appearance");
 
@@ -1147,7 +1775,7 @@ export function SettingsWorkspace({
                 <AppearanceSection settings={settings} onUpdateSettings={onUpdateSettings} />
               )}
               {section === "terminal" && (
-                <TerminalSection settings={settings} onUpdateSettings={onUpdateSettings} />
+                <TerminalSection settings={settings} runtimeInfo={runtimeInfo} onUpdateSettings={onUpdateSettings} />
               )}
               {section === "session" && (
                 <SessionSection settings={settings} onUpdateSettings={onUpdateSettings} />
@@ -1162,15 +1790,20 @@ export function SettingsWorkspace({
                   onUpdateProject={onUpdateProject}
                   onRemoveProject={onRemoveProject}
                   onOpenProjectPath={onOpenProjectPath}
+                  onBootstrapSpecKit={onBootstrapSpecKit}
+                  onListAgencyAgents={onListAgencyAgents}
+                  onSyncProjectAgencyAgent={onSyncProjectAgencyAgent}
                 />
               )}
               {section === "agents" && (
                 <AgentsPanel
+                  projects={projects}
                   settings={settings}
                   installedAgents={installedAgents}
                   runtimeInfo={runtimeInfo}
                   onUpdateSettings={onUpdateSettings}
                   onOpenAddCustomAgent={onOpenAddCustomAgent}
+                  onInstallCaveman={onInstallCaveman}
                 />
               )}
             </div>

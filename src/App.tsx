@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open as openPath } from "@tauri-apps/plugin-shell";
 import { AgentBar } from "./components/AgentBar/AgentBar";
 import { PaneGrid } from "./components/PaneGrid/PaneGrid";
 import { Sidebar } from "./components/Sidebar/Sidebar";
@@ -16,12 +15,18 @@ import { TerminalTabBar, KANBAN_TAB_ID } from "./components/TerminalTabBar/Termi
 import { KanbanBoard } from "./components/Kanban/KanbanBoard";
 import { GitDiffPanel } from "./components/GitDiffPanel/GitDiffPanel";
 import { KNOWN_AGENTS } from "./constants/agents";
+import { syncProjectMcpFiles } from "./lib/projectMcpSync";
 import { useProjectStore } from "./store/projectStore";
 import { useSessionStore } from "./store/sessionStore";
 
 interface GitStatusSummary {
   count: number;
   branch: string;
+}
+interface AgencyAgentOption {
+  slug: string;
+  name: string;
+  category: string;
 }
 import type { Project, SystemHealth } from "./types";
 
@@ -128,6 +133,16 @@ function App() {
       ensureLayout(project.id);
     }
   }, [ensureLayout, projects, sessionInitialized, syncProjects]);
+
+  useEffect(() => {
+    if (!bootstrapped || !sessionInitialized) {
+      return;
+    }
+
+    void Promise.allSettled(
+      projects.map((project) => syncProjectMcpFiles(project, settings.mcpServers)),
+    );
+  }, [bootstrapped, projects, sessionInitialized, settings.mcpServers]);
 
   useEffect(() => {
     if (!bootstrapped || !sessionInitialized) {
@@ -300,8 +315,27 @@ function App() {
   }, [killSessionsForProject, removeProject]);
 
   const handleOpenProjectPath = useCallback((path: string) => {
-    void openPath(path);
+    void invoke("open_in_file_manager", { path });
   }, []);
+
+  const handleBootstrapSpecKit = useCallback((projectPath: string, agentId: string) => {
+    return invoke<string>("bootstrap_spec_kit", { projectPath, agentId });
+  }, []);
+
+  const handleInstallCaveman = useCallback((agentId: string) => {
+    return invoke<string>("install_caveman", { agentId });
+  }, []);
+
+  const handleListAgencyAgents = useCallback(() => {
+    return invoke<AgencyAgentOption[]>("list_agency_agents");
+  }, []);
+
+  const handleSyncProjectAgencyAgent = useCallback(
+    (projectPath: string, slug: string, enabled: boolean) => {
+      return invoke<string>("sync_project_agency_agent", { projectPath, slug, enabled });
+    },
+    [],
+  );
 
   const runningCount = Object.values(sessions).filter(
     (session) => session.status === "running" || session.status === "starting",
@@ -371,6 +405,8 @@ function App() {
               }
             }}
             onAddCustomAgent={() => setCustomAgentOpen(true)}
+            onUpdateProject={updateProject}
+            onSyncProjectAgencyAgent={handleSyncProjectAgencyAgent}
           />
 
           <section className="flex-1 min-h-0 relative">
@@ -521,6 +557,10 @@ function App() {
         onOpenProjectPath={handleOpenProjectPath}
         onUpdateSettings={upsertSettings}
         onOpenAddCustomAgent={() => setCustomAgentOpen(true)}
+        onBootstrapSpecKit={handleBootstrapSpecKit}
+        onInstallCaveman={handleInstallCaveman}
+        onListAgencyAgents={handleListAgencyAgents}
+        onSyncProjectAgencyAgent={handleSyncProjectAgencyAgent}
       />
 
       {/* Git Diff Panel */}
