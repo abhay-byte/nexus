@@ -656,6 +656,7 @@ function ProjectsPanel({
   const [agencyStatus, setAgencyStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [agencyRunning, setAgencyRunning] = useState(false);
   const [agencyCategory, setAgencyCategory] = useState<string>("");
+  const [draftAgencySlug, setDraftAgencySlug] = useState<string>(DEFAULT_AGENCY_AGENT_SLUG);
   const agencyFetchRef = useRef(false);
 
   useEffect(() => {
@@ -701,6 +702,28 @@ function ProjectsPanel({
     });
   }, [selectedProject, specKitAgents]);
 
+  useEffect(() => {
+    setDraftAgencySlug(selectedAgencyConfig.selectedAgentSlug);
+  }, [selectedAgencyConfig.selectedAgentSlug, selectedProjectId]);
+
+  useEffect(() => {
+    if (!agencyAgents.length) {
+      return;
+    }
+
+    const draftMatch = agencyAgents.find((agent) => agent.slug === draftAgencySlug);
+    if (draftMatch) {
+      if (agencyCategory !== draftMatch.category) {
+        setAgencyCategory(draftMatch.category);
+      }
+      return;
+    }
+
+    if (!agencyCategory || !agencyAgents.some((agent) => agent.category === agencyCategory)) {
+      setAgencyCategory(agencyAgents[0]?.category ?? "");
+    }
+  }, [agencyAgents, agencyCategory, draftAgencySlug]);
+
   // Agency agents are NOT loaded on mount — loading requires a git clone which hangs the UI.
   // User must click "Load Catalog" to trigger the fetch.
   const fetchAgencyAgents = () => {
@@ -712,11 +735,6 @@ function ProjectsPanel({
       .then((entries) => {
         setAgencyAgents(entries);
         setAgencyFetched(true);
-        // Set default category if not set
-        setAgencyCategory((curr) => {
-          if (curr) return curr;
-          return entries[0]?.category ?? "";
-        });
       })
       .catch(() => {
         setAgencyAgents([]);
@@ -770,6 +788,14 @@ function ProjectsPanel({
         ...patch,
       },
     });
+  };
+
+  const applyAgencySelection = async (enabled: boolean, slug: string) => {
+    patchAgencyConfig({
+      enabled,
+      selectedAgentSlug: slug,
+    });
+    await syncAgencyAgent(enabled, slug);
   };
 
   const syncAgencyAgent = async (enabled: boolean, slug: string) => {
@@ -1016,11 +1042,11 @@ function ProjectsPanel({
                   </div>
                   <button
                     type="button"
-                    onClick={() => void syncAgencyAgent(selectedAgencyConfig.enabled, selectedAgencyConfig.selectedAgentSlug)}
+                    onClick={() => void applyAgencySelection(selectedAgencyConfig.enabled, draftAgencySlug)}
                     disabled={agencyRunning || agencyLoading || !selectedAgencyConfig.enabled}
                     className="border-4 border-[#1a1a1a] bg-[#10B981] px-4 py-2 font-headline text-sm font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8]"
                   >
-                    {agencyRunning ? "Syncing..." : "Sync Agency File"}
+                    {agencyRunning ? "Syncing..." : "Apply Agency File"}
                   </button>
                 </div>
 
@@ -1031,8 +1057,7 @@ function ProjectsPanel({
                       type="button"
                       onClick={() => {
                         const nextEnabled = !selectedAgencyConfig.enabled;
-                        patchAgencyConfig({ enabled: nextEnabled });
-                        void syncAgencyAgent(nextEnabled, selectedAgencyConfig.selectedAgentSlug);
+                        void applyAgencySelection(nextEnabled, draftAgencySlug);
                       }}
                       className={`mt-3 relative h-8 w-16 border-4 border-[#1a1a1a] transition-none dark:border-[#f5f0e8] ${selectedAgencyConfig.enabled ? "bg-[#10B981]" : "bg-white dark:bg-[#1a1a1a]"}`}
                     >
@@ -1081,10 +1106,7 @@ function ProjectsPanel({
                               // Auto-select first specialist in new category
                               const firstInCat = agencyAgents.find((a) => a.category === cat);
                               if (firstInCat) {
-                                patchAgencyConfig({ selectedAgentSlug: firstInCat.slug });
-                                if (selectedAgencyConfig.enabled) {
-                                  void syncAgencyAgent(true, firstInCat.slug);
-                                }
+                                setDraftAgencySlug(firstInCat.slug);
                               }
                             }}
                             options={Array.from(new Set(agencyAgents.map((a) => a.category))).map((cat) => ({
@@ -1099,12 +1121,9 @@ function ProjectsPanel({
                         <div className="space-y-2">
                           <FieldLabel>Agency Specialist</FieldLabel>
                           <AgencyDropdown
-                            value={selectedAgencyConfig.selectedAgentSlug}
+                            value={draftAgencySlug}
                             onChange={(value) => {
-                              patchAgencyConfig({ selectedAgentSlug: value });
-                              if (selectedAgencyConfig.enabled) {
-                                void syncAgencyAgent(true, value);
-                              }
+                              setDraftAgencySlug(value);
                             }}
                             options={agencyAgents
                               .filter((a) => !agencyCategory || a.category === agencyCategory)
@@ -1129,6 +1148,9 @@ function ProjectsPanel({
                       <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Project Files</p>
                       <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
                         Nexus writes the selected specialist to <span className="font-mono">AGENCY.md</span> and keeps a manifest at <span className="font-mono">.nexus/agency-agents.json</span>.
+                      </p>
+                      <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
+                        Dropdown changes are staged only. Nexus updates the project files when you click <span className="font-mono">Apply Agency File</span> or toggle the feature.
                       </p>
                       <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
                         Nexus only overwrites an existing <span className="font-mono">AGENCY.md</span> when that file was already created by Nexus, so existing manual project files stay protected.
