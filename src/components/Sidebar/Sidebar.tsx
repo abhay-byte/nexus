@@ -32,7 +32,7 @@ export function Sidebar({
     <aside className="bg-[#f5f0e8] dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] flex flex-col h-full overflow-y-auto w-64 border-r-4 border-[#1a1a1a] dark:border-[#f5f0e8] z-40 hidden md:flex shrink-0 font-['Space_Grotesk'] font-bold uppercase" onClick={() => setMenu(null)}>
       <div className="p-6 border-b-4 border-[#1a1a1a] dark:border-[#f5f0e8]">
         <h2 className="font-['Space_Grotesk'] font-bold uppercase text-xl font-black">WORKSPACE</h2>
-        <p className="font-['Space_Grotesk'] text-[10px] opacity-60">v0.1.1</p>
+        <p className="font-['Space_Grotesk'] text-[10px] opacity-60">v0.1.2</p>
       </div>
 
       <nav className="flex-grow overflow-y-auto">
