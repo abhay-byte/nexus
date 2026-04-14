@@ -42,25 +42,29 @@
 
 > **[⬇ Download latest release](https://github.com/abhay-byte/nexus/releases/latest)**
 
-Pre-built packages are available for all platforms — no build toolchain required.
+Installation is package-only now. The release contains exactly four archives:
+
+- `Nexus_linux_x64.tar.gz`
+- `Nexus_linux_arm64.tar.gz`
+- `Nexus_windows_x64.zip`
+- `Nexus_windows_arm64.zip`
 
 ---
 
-### 🐧 Linux — x86_64
+### 🐧 Linux — x64
 
-**Option A — AppImage** (any distro, portable):
+Run the installer script:
 
 ```bash
-chmod +x Nexus_0.1.1_amd64.AppImage
-./Nexus_0.1.1_amd64.AppImage
+./install.sh
 ```
 
-> Move it to `~/.local/bin/nexus` so you can run `nexus` from anywhere.
-
-**Option B — .deb** (Debian / Ubuntu / Mint):
+Or install manually from the release package:
 
 ```bash
-sudo dpkg -i Nexus_0.1.1_amd64.deb
+tar -xzf Nexus_linux_x64.tar.gz
+cp Nexus_linux_x64/nexus ~/.local/bin/nexus
+chmod +x ~/.local/bin/nexus
 nexus
 ```
 
@@ -68,31 +72,36 @@ nexus
 
 ### 🐧 Linux — ARM64
 
-**Option A — AppImage** (any distro, portable):
+`install.sh` auto-detects `arm64` and downloads `Nexus_linux_arm64.tar.gz`.
+
+Manual install:
 
 ```bash
-chmod +x Nexus_0.1.1_aarch64.AppImage
-./Nexus_0.1.1_aarch64.AppImage
-```
-
-**Option B — .deb** (Debian / Ubuntu / Mint ARM):
-
-```bash
-sudo dpkg -i Nexus_0.1.1_aarch64.deb
+tar -xzf Nexus_linux_arm64.tar.gz
+cp Nexus_linux_arm64/nexus ~/.local/bin/nexus
+chmod +x ~/.local/bin/nexus
 nexus
 ```
 
 ---
 
-### 🪟 Windows — x86_64
+### 🪟 Windows — x64
 
-Download `Nexus_0.1.1_x64-setup.exe` or `Nexus_0.1.1_x64_en-US.msi` and run the installer. Nexus will appear in the Start menu.
+Run the installer script:
+
+```powershell
+./install.ps1
+```
+
+Or download `Nexus_windows_x64.zip`, extract it, and run `nexus.exe`.
 
 ---
 
 ### 🪟 Windows — ARM64
 
-Download `Nexus_0.1.1_arm64-setup.exe` or `Nexus_0.1.1_arm64_en-US.msi` and run the installer.
+`install.ps1` auto-detects `arm64` and downloads `Nexus_windows_arm64.zip`.
+
+Or download `Nexus_windows_arm64.zip`, extract it, and run `nexus.exe`.
 
 ---
 
