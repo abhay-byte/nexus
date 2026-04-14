@@ -4,6 +4,7 @@ import {
   exists,
   mkdir,
   readTextFile,
+  remove,
 } from "@tauri-apps/plugin-fs";
 import { KNOWN_AGENTS } from "../constants/agents";
 import type {
@@ -69,6 +70,22 @@ function sanitizeSpecKit(project: Project): SpecKitProjectConfig {
   };
 }
 
+function parsePersistedJson<T>(contents: string): T {
+  try {
+    return JSON.parse(contents) as T;
+  } catch (initialError) {
+    const trimmed = contents.trimEnd();
+    for (let index = trimmed.length - 1; index > 0; index -= 1) {
+      try {
+        return JSON.parse(trimmed.slice(0, index)) as T;
+      } catch {
+        continue;
+      }
+    }
+    throw initialError;
+  }
+}
+
 function sanitizeProject(project: Project): Project {
   return {
     ...project,
@@ -124,7 +141,7 @@ export async function loadProjects(): Promise<Project[]> {
     baseDir: BaseDirectory.AppConfig,
   });
 
-  const parsed = JSON.parse(contents) as PersistedProjects;
+  const parsed = parsePersistedJson<PersistedProjects>(contents);
   return Promise.all((parsed.projects ?? []).map((project) =>
     syncSpecKitState({
       ...project,
@@ -135,6 +152,10 @@ export async function loadProjects(): Promise<Project[]> {
 
 export async function saveProjects(projects: Project[]) {
   await ensureDataDir();
+
+  if (await exists(PROJECTS_FILE, { baseDir: BaseDirectory.AppConfig })) {
+    await remove(PROJECTS_FILE, { baseDir: BaseDirectory.AppConfig });
+  }
 
   const file = await create(PROJECTS_FILE, {
     baseDir: BaseDirectory.AppConfig,
@@ -164,7 +185,7 @@ export async function loadSessions(): Promise<PersistedSessions | null> {
     baseDir: BaseDirectory.AppConfig,
   });
 
-  const parsed = JSON.parse(contents) as PersistedSessions;
+  const parsed = parsePersistedJson<PersistedSessions>(contents);
   return {
     ...parsed,
     settings: {
@@ -195,6 +216,10 @@ export async function loadSessions(): Promise<PersistedSessions | null> {
 
 export async function saveSessions(payload: PersistedSessions) {
   await ensureDataDir();
+
+  if (await exists(SESSIONS_FILE, { baseDir: BaseDirectory.AppConfig })) {
+    await remove(SESSIONS_FILE, { baseDir: BaseDirectory.AppConfig });
+  }
 
   const file = await create(SESSIONS_FILE, {
     baseDir: BaseDirectory.AppConfig,
