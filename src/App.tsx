@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { exists } from "@tauri-apps/plugin-fs";
+import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 import { AgentBar } from "./components/AgentBar/AgentBar";
 import { PaneGrid } from "./components/PaneGrid/PaneGrid";
 import { Sidebar } from "./components/Sidebar/Sidebar";
@@ -33,6 +33,17 @@ import type { Project, SystemHealth } from "./types";
 
 function isRemoteProjectPath(path: string) {
   return /^[^@:\s]+@[^:\s]+:.+$/.test(path);
+}
+
+async function readAgencyManifestSlug(projectPath: string) {
+  try {
+    const root = projectPath.replace(/[\\/]+$/, "");
+    const contents = await readTextFile(`${root}/.nexus/agency-agents.json`);
+    const parsed = JSON.parse(contents) as { slug?: unknown };
+    return typeof parsed.slug === "string" ? parsed.slug : null;
+  } catch {
+    return null;
+  }
 }
 
 function App() {
@@ -359,12 +370,17 @@ function App() {
         }
 
         const root = project.path.replace(/[\\/]+$/, "");
-        const [hasAgencyFile, hasLegacyAgencyFile] = await Promise.all([
+        const [hasAgencyFile, hasLegacyAgencyFile, manifestSlug] = await Promise.all([
           exists(`${root}/AGENCY.md`),
           exists(`${root}/.nexus/agency-agent.md`),
+          readAgencyManifestSlug(project.path),
         ]);
 
-        if (hasAgencyFile && !hasLegacyAgencyFile) {
+        if (
+          hasAgencyFile &&
+          !hasLegacyAgencyFile &&
+          manifestSlug === project.agencyAgent.selectedAgentSlug
+        ) {
           continue;
         }
 
