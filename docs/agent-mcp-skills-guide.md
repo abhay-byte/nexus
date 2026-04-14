@@ -253,6 +253,7 @@ Important caveats:
 
 - Nexus does not yet automate the Codex Caveman plugin flow because upstream requires installing it through Codex from a local Caveman clone.
 - For agents installed through `npx skills add`, upstream notes that the skill file is installed but always-on rule files may still need manual setup if you want session-start activation everywhere.
+- After a successful one-click install, Nexus persists a per-agent Caveman marker in its app settings so the `Agents & MCP` screen stays in sync across app restarts.
 
 ## Context7 as a Skill
 
@@ -334,6 +335,7 @@ Behavior:
 
 - if `.specify` already exists, Nexus skips the project
 - if `.specify` is missing, Nexus initializes Spec Kit in-place
+- Nexus persists the last successful bootstrap target in project settings and also treats the real project-local `.specify/` directory as the durable source of truth when reloading projects
 
 Why Nexus does not hand-write those files itself:
 

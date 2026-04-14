@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import { KNOWN_AGENTS, PROJECT_SWATCHES } from "../../constants/agents";
-import { MCP_AUTO_INSTALL_AGENT_IDS, MCP_SERVER_PRESETS, createMcpServerFromPreset } from "../../constants/mcpPresets";
+import {
+  MCP_AUTO_INSTALL_AGENT_IDS,
+  MCP_SERVER_PRESETS,
+  createMcpServerFromPreset,
+  matchesMcpServerPreset,
+} from "../../constants/mcpPresets";
 import { getAgentMcpInstallLabel } from "../../lib/projectMcpSync";
 import type {
+  AgentId,
   AppSettings,
   AgencyAgentProjectConfig,
   InstalledAgentStatus,
@@ -676,6 +682,8 @@ function ProjectsPanel({
     () => allAgents.filter((agent) => SPEC_KIT_SUPPORTED_AGENT_IDS.has(agent.id)),
     [allAgents],
   );
+  const selectedProjectSpecKitEnabled = selectedProject?.specKit?.enabled ?? false;
+  const selectedProjectSpecKitAgentId = selectedProject?.specKit?.agentId ?? null;
 
   useEffect(() => {
     if (!selectedProject) {
@@ -734,6 +742,12 @@ function ProjectsPanel({
     setSpecKitStatus(null);
     try {
       const message = await onBootstrapSpecKit(selectedProject.path, specKitAgentId);
+      patchProject({
+        specKit: {
+          enabled: true,
+          agentId: specKitAgentId,
+        },
+      });
       setSpecKitStatus({ tone: "success", message });
     } catch (error) {
       setSpecKitStatus({
@@ -943,7 +957,11 @@ function ProjectsPanel({
                     disabled={specKitRunning || !specKitAgents.length}
                     className="border-4 border-[#1a1a1a] bg-[#0055ff] px-4 py-2 font-headline text-sm font-black uppercase text-white hover:bg-[#1a1a1a] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8]"
                   >
-                    {specKitRunning ? "Bootstrapping..." : "Bootstrap Spec Kit"}
+                    {specKitRunning
+                      ? "Bootstrapping..."
+                      : selectedProjectSpecKitEnabled
+                        ? "Rebootstrap Spec Kit"
+                        : "Bootstrap Spec Kit"}
                   </button>
                 </div>
 
@@ -952,15 +970,16 @@ function ProjectsPanel({
                     <FieldLabel>Target Agent</FieldLabel>
                     <div className="flex flex-wrap gap-3">
                       {specKitAgents.map((agent) => {
-                        const installed = settings.customAgents.some((entry) => entry.id === agent.id)
-                          ? true
-                          : installedStatus.get(agent.id) ?? false;
+                        const installed = selectedProjectSpecKitEnabled && (
+                          selectedProjectSpecKitAgentId === null ||
+                          selectedProjectSpecKitAgentId === agent.id
+                        );
                         return (
                           <ToggleChip
                             key={`spec-kit-${agent.id}`}
                             active={specKitAgentId === agent.id}
                             label={agent.name}
-                            meta={installed ? "Installed" : "Not detected"}
+                            meta={installed ? "Bootstrapped in project" : "Ready to bootstrap"}
                             color={agent.color}
                             onClick={() => setSpecKitAgentId(agent.id)}
                           />
@@ -1188,6 +1207,21 @@ function AgentsPanel({
   const [cavemanRunningAgentId, setCavemanRunningAgentId] = useState<string | null>(null);
   const [cavemanStatus, setCavemanStatus] = useState<Record<string, { tone: "success" | "error"; message: string }>>({});
   const [selectedCavemanAgentId, setSelectedCavemanAgentId] = useState<string>("claude-code");
+  const cavemanInstalledAgentIds = useMemo(
+    () => new Set(settings.cavemanInstalledAgentIds ?? []),
+    [settings.cavemanInstalledAgentIds],
+  );
+  const presetServerIds = useMemo(
+    () => new Set(
+      settings.mcpServers
+        .map((server) => {
+          const preset = MCP_SERVER_PRESETS.find((entry) => matchesMcpServerPreset(server, entry));
+          return preset?.id ?? null;
+        })
+        .filter((presetId): presetId is string => Boolean(presetId)),
+    ),
+    [settings.mcpServers],
+  );
   const removeCustomAgent = (agentId: string) => {
     onUpdateSettings({ customAgents: settings.customAgents.filter((a) => a.id !== agentId) });
   };
@@ -1200,6 +1234,12 @@ function AgentsPanel({
     });
     try {
       const message = await onInstallCaveman(agentId);
+      onUpdateSettings({
+        cavemanInstalledAgentIds: Array.from(new Set<AgentId>([
+          ...(settings.cavemanInstalledAgentIds ?? []),
+          agentId,
+        ])),
+      });
       setCavemanStatus((current) => ({
         ...current,
         [agentId]: { tone: "success", message },
@@ -1249,7 +1289,7 @@ function AgentsPanel({
 
     const nextServer = createMcpServerFromPreset(preset);
     const alreadyExists = settings.mcpServers.some(
-      (server) => server.name === nextServer.name && server.command === nextServer.command,
+      (server) => matchesMcpServerPreset(server, preset),
     );
     if (alreadyExists) {
       return;
@@ -1265,7 +1305,7 @@ function AgentsPanel({
 
     onUpdateSettings({
       mcpServers: settings.mcpServers.filter(
-        (server) => !(server.name === preset.name && server.command === preset.command),
+        (server) => !matchesMcpServerPreset(server, preset),
       ),
     });
   };
@@ -1339,9 +1379,7 @@ function AgentsPanel({
                 .map((agentId) => autoSyncAgentNames.get(agentId))
                 .filter(Boolean)
                 .join(", ");
-              const active = settings.mcpServers.some(
-                (server) => server.name === preset.name && server.command === preset.command,
-              );
+              const active = presetServerIds.has(preset.id);
               return (
                 <PresetCard
                   key={preset.id}
@@ -1484,7 +1522,11 @@ function AgentsPanel({
             disabled={cavemanRunningAgentId === selectedCavemanAgentId || (!CAVEMAN_ONE_CLICK_AGENT_IDS.has(selectedCavemanAgentId) && selectedCavemanAgentId !== "codex")}
             className="border-4 border-[#1a1a1a] bg-[#10B981] px-4 py-2 font-headline text-sm font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8]"
           >
-            {cavemanRunningAgentId === selectedCavemanAgentId ? "Installing..." : "Install Caveman"}
+            {cavemanRunningAgentId === selectedCavemanAgentId
+              ? "Installing..."
+              : cavemanInstalledAgentIds.has(selectedCavemanAgentId)
+                ? "Reinstall Caveman"
+                : "Install Caveman"}
           </button>
         </div>
 
@@ -1512,7 +1554,9 @@ function AgentsPanel({
           <div className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-4 dark:border-[#f5f0e8] dark:bg-[#111111]">
             <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Install Notes</p>
             <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
-              Claude, Gemini, Cline, and Kiro have one-click install paths. Codex still uses the upstream local-plugin flow, so Nexus only documents that manual route.
+              {cavemanInstalledAgentIds.has(selectedCavemanAgentId)
+                ? "Nexus has a saved install marker for this agent. Reinstall only if the upstream tool says the add-on is missing."
+                : "Claude, Gemini, Cline, and Kiro have one-click install paths. Codex still uses the upstream local-plugin flow, so Nexus only documents that manual route."}
             </p>
           </div>
         </div>
@@ -1611,7 +1655,11 @@ function AgentsPanel({
                       disabled={cavemanRunningAgentId === agent.id || !CAVEMAN_ONE_CLICK_AGENT_IDS.has(agent.id)}
                       className="border-4 border-[#1a1a1a] bg-[#10B981] px-4 py-2 font-headline text-sm font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8] dark:text-[#1a1a1a]"
                     >
-                      {cavemanRunningAgentId === agent.id ? "Installing..." : "Install Caveman"}
+                      {cavemanRunningAgentId === agent.id
+                        ? "Installing..."
+                        : cavemanInstalledAgentIds.has(agent.id)
+                          ? "Reinstall Caveman"
+                          : "Install Caveman"}
                     </button>
                   </div>
 

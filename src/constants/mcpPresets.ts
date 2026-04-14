@@ -158,10 +158,18 @@ export function createMcpServerFromPreset(
 ): McpServerConfig {
   return {
     id: `mcp-${preset.id}`,
+    presetId: preset.id,
     name: preset.name,
     command: preset.command,
     args: [...preset.args],
     env: preset.env ? { ...preset.env } : {},
     enabledAgentIds: [...(preset.autoInstallAgents ?? preset.recommendedAgents)],
   };
+}
+
+export function matchesMcpServerPreset(server: McpServerConfig, preset: McpServerPreset) {
+  return server.presetId === preset.id || (
+    server.name === preset.name &&
+    server.command === preset.command
+  );
 }

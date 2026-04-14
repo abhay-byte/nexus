@@ -17,7 +17,7 @@
 - **True-color PTY** — `xterm-256color` + `COLORTERM=truecolor` injected; TUI tools (Codex, lazygit, etc.) render correctly  
 - **Credential inheritance** — PTY spawner inherits your full shell environment (API keys, PATH, etc.) so agents are already logged in
 - **Shared MCP registry** — configure MCP once in `Settings -> Agents & MCP`, then let Nexus inject or sync it across every registered project
-- **Workflow add-ons** — bootstrap Spec Kit into real `.specify/` project files, install a project-level `AGENCY.md` specialist, and install Caveman for supported agents from settings
+- **Workflow add-ons** — bootstrap Spec Kit into real `.specify/` project files, install a project-level `AGENCY.md` specialist, and install Caveman for supported agents from settings with persisted install state across restarts
 - **Brutalist UI** — high-contrast dark mode, Space Grotesk typography, yellow accent (`#ffcc00`), pixel-shadow components
 
 ---

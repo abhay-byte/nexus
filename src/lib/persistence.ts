@@ -7,10 +7,12 @@ import {
 } from "@tauri-apps/plugin-fs";
 import { KNOWN_AGENTS } from "../constants/agents";
 import type {
+  AgentId,
   AppSettings,
   PersistedProjects,
   PersistedSessions,
   Project,
+  SpecKitProjectConfig,
 } from "../types";
 
 const DATA_DIR = "data";
@@ -33,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   customAgents: [],
   mcpServers: [],
+  cavemanInstalledAgentIds: [],
 };
 
 function sanitizeMcpServers(settings: Pick<AppSettings, "mcpServers">) {
@@ -54,6 +57,18 @@ async function ensureDataDir() {
   }
 }
 
+function isRemoteProjectPath(path: string) {
+  return /^[^@:\s]+@[^:\s]+:.+$/.test(path);
+}
+
+function sanitizeSpecKit(project: Project): SpecKitProjectConfig {
+  const agentId = project.specKit?.agentId;
+  return {
+    enabled: project.specKit?.enabled ?? false,
+    agentId: typeof agentId === "string" && !removedBuiltInAgentIds.has(agentId) ? agentId : null,
+  };
+}
+
 function sanitizeProject(project: Project): Project {
   return {
     ...project,
@@ -69,6 +84,27 @@ function sanitizeProject(project: Project): Project {
     agencyAgent: {
       enabled: project.agencyAgent?.enabled ?? false,
       selectedAgentSlug: project.agencyAgent?.selectedAgentSlug ?? "agents-orchestrator",
+    },
+    specKit: sanitizeSpecKit(project),
+  };
+}
+
+async function syncSpecKitState(project: Project): Promise<Project> {
+  const sanitized = sanitizeProject(project);
+  if (isRemoteProjectPath(sanitized.path)) {
+    return sanitized;
+  }
+
+  const hasSpecifyDir = await exists(`${sanitized.path.replace(/[\\/]+$/, "")}/.specify`);
+  if (!hasSpecifyDir) {
+    return sanitized;
+  }
+
+  return {
+    ...sanitized,
+    specKit: {
+      enabled: true,
+      agentId: sanitized.specKit?.agentId ?? null,
     },
   };
 }
@@ -89,12 +125,12 @@ export async function loadProjects(): Promise<Project[]> {
   });
 
   const parsed = JSON.parse(contents) as PersistedProjects;
-  return (parsed.projects ?? []).map((project) =>
-    sanitizeProject({
+  return Promise.all((parsed.projects ?? []).map((project) =>
+    syncSpecKitState({
       ...project,
       mcpServers: project.mcpServers ?? [],
     }),
-  );
+  ));
 }
 
 export async function saveProjects(projects: Project[]) {
@@ -150,6 +186,9 @@ export async function loadSessions(): Promise<PersistedSessions | null> {
       mcpServers: sanitizeMcpServers({
         mcpServers: parsed.settings?.mcpServers ?? DEFAULT_SETTINGS.mcpServers,
       }),
+      cavemanInstalledAgentIds: (parsed.settings?.cavemanInstalledAgentIds ?? []).filter(
+        (agentId): agentId is AgentId => typeof agentId === "string" && !removedBuiltInAgentIds.has(agentId),
+      ),
     },
   };
 }

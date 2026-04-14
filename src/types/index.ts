@@ -24,11 +24,17 @@ export interface McpServerConfig {
   args: string[];
   env?: Record<string, string>;
   enabledAgentIds: AgentId[];
+  presetId?: string;
 }
 
 export interface AgencyAgentProjectConfig {
   enabled: boolean;
   selectedAgentSlug: string;
+}
+
+export interface SpecKitProjectConfig {
+  enabled: boolean;
+  agentId: AgentId | null;
 }
 
 export interface Project {
@@ -39,6 +45,7 @@ export interface Project {
   defaultAgents: AgentId[];
   mcpServers: McpServerConfig[];
   agencyAgent?: AgencyAgentProjectConfig;
+  specKit?: SpecKitProjectConfig;
   createdAt: number;
 }
 
@@ -54,6 +61,7 @@ export interface AppSettings {
   defaultAgentArgs: Record<string, string>;
   customAgents: AgentConfig[];
   mcpServers: McpServerConfig[];
+  cavemanInstalledAgentIds: AgentId[];
 }
 
 export interface PersistedProjects {

@@ -92,6 +92,10 @@ export const useProjectStore = create<ProjectStoreState>()(
           enabled: false,
           selectedAgentSlug: "agents-orchestrator",
         },
+        specKit: {
+          enabled: false,
+          agentId: null,
+        },
         createdAt: Date.now(),
       };
 
@@ -124,6 +128,7 @@ export const useProjectStore = create<ProjectStoreState>()(
               defaultAgents: patch.defaultAgents ?? project.defaultAgents,
               mcpServers: patch.mcpServers ?? project.mcpServers,
               agencyAgent: patch.agencyAgent ?? project.agencyAgent,
+              specKit: patch.specKit ?? project.specKit,
             }
           : project,
       );
