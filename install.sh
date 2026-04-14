@@ -62,6 +62,8 @@ install_binary() {
   local archive="$TMP_DIR/$asset"
   local extract_dir="$TMP_DIR/extract"
   local package_dir="$extract_dir/Nexus_linux_${arch}"
+  local target_bin="$INSTALL_DIR/$APP_NAME"
+  local staged_bin="$INSTALL_DIR/.${APP_NAME}.new.$$"
 
   mkdir -p "$extract_dir" "$INSTALL_DIR" "$ICONS_DIR" "$DESKTOP_DIR"
 
@@ -73,8 +75,9 @@ install_binary() {
 
   [ -f "$package_dir/nexus" ] || die "package is missing the nexus binary"
 
-  cp "$package_dir/nexus" "$INSTALL_DIR/$APP_NAME"
-  chmod +x "$INSTALL_DIR/$APP_NAME"
+  cp "$package_dir/nexus" "$staged_bin"
+  chmod +x "$staged_bin"
+  mv -f "$staged_bin" "$target_bin"
 
   if [ -f "$package_dir/icon.png" ]; then
     cp "$package_dir/icon.png" "$ICONS_DIR/nexus-terminal.png"
