@@ -157,9 +157,9 @@ function AgencySwitcher({
 
   const handleSelectSlug = async (slug: string) => {
     setOpen(false);
-    if (!project.agencyAgent || slug === currentSlug) return;
+    if (!project.agencyAgent) return;
 
-    if (onUpdateProject) {
+    if (onUpdateProject && slug !== currentSlug) {
       await onUpdateProject(project.id, {
         agencyAgent: { enabled: true, selectedAgentSlug: slug },
       });

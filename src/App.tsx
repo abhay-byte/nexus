@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { exists } from "@tauri-apps/plugin-fs";
 import { AgentBar } from "./components/AgentBar/AgentBar";
 import { PaneGrid } from "./components/PaneGrid/PaneGrid";
 import { Sidebar } from "./components/Sidebar/Sidebar";
@@ -29,6 +30,10 @@ interface AgencyAgentOption {
   category: string;
 }
 import type { Project, SystemHealth } from "./types";
+
+function isRemoteProjectPath(path: string) {
+  return /^[^@:\s]+@[^:\s]+:.+$/.test(path);
+}
 
 function App() {
   const projects = useProjectStore((state) => state.projects);
@@ -143,6 +148,7 @@ function App() {
       projects.map((project) => syncProjectMcpFiles(project, settings.mcpServers)),
     );
   }, [bootstrapped, projects, sessionInitialized, settings.mcpServers]);
+
 
   useEffect(() => {
     if (!bootstrapped || !sessionInitialized) {
@@ -336,6 +342,44 @@ function App() {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!bootstrapped || !sessionInitialized) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      for (const project of projects) {
+        if (cancelled) {
+          return;
+        }
+        if (!project.agencyAgent?.enabled || isRemoteProjectPath(project.path)) {
+          continue;
+        }
+
+        const root = project.path.replace(/[\\/]+$/, "");
+        const [hasAgencyFile, hasLegacyAgencyFile] = await Promise.all([
+          exists(`${root}/AGENCY.md`),
+          exists(`${root}/.nexus/agency-agent.md`),
+        ]);
+
+        if (hasAgencyFile && !hasLegacyAgencyFile) {
+          continue;
+        }
+
+        await handleSyncProjectAgencyAgent(
+          project.path,
+          project.agencyAgent.selectedAgentSlug,
+          true,
+        ).catch(() => undefined);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrapped, handleSyncProjectAgencyAgent, projects, sessionInitialized]);
 
   const runningCount = Object.values(sessions).filter(
     (session) => session.status === "running" || session.status === "starting",
