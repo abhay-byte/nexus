@@ -3,6 +3,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
 use std::{
     collections::HashMap,
+    env,
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -11,7 +12,9 @@ use std::{
     thread,
 };
 use tauri::{AppHandle, Emitter, State};
-use which::which;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 const CAVEMAN_REPO: &str = "https://github.com/JuliusBrussee/caveman";
 const SPEC_KIT_REPO: &str = "git+https://github.com/github/spec-kit.git";
@@ -34,6 +37,73 @@ fn shell_escape(value: &str) -> String {
 
 fn powershell_escape(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
+}
+
+fn command_name_candidates(command: &str) -> Vec<PathBuf> {
+    #[cfg(windows)]
+    let mut candidates = vec![PathBuf::from(command)];
+
+    #[cfg(not(windows))]
+    let candidates = vec![PathBuf::from(command)];
+
+    #[cfg(windows)]
+    {
+        if Path::new(command).extension().is_none() {
+            let pathext = env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+            for ext in pathext.split(';').filter(|ext| !ext.is_empty()) {
+                candidates.push(PathBuf::from(format!("{command}{ext}")));
+            }
+        }
+    }
+
+    candidates
+}
+
+fn is_executable_path(path: &Path) -> bool {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return false,
+    };
+
+    if !metadata.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        metadata.permissions().mode() & 0o111 != 0
+    }
+
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+fn find_command_path(command: &str) -> Option<PathBuf> {
+    let command_path = Path::new(command);
+
+    if command_path.is_absolute() || command_path.components().count() > 1 {
+        return command_name_candidates(command)
+            .into_iter()
+            .find(|candidate| is_executable_path(candidate));
+    }
+
+    let path_env = env::var_os("PATH")?;
+    for dir in env::split_paths(&path_env) {
+        for name in command_name_candidates(command) {
+            let candidate = dir.join(&name);
+            if is_executable_path(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+fn command_exists(command: &str) -> bool {
+    find_command_path(command).is_some()
 }
 
 /// Called once at startup, before the Tauri builder runs.
@@ -206,9 +276,9 @@ fn default_shell(shell_override: Option<String>) -> String {
     }
 
     if cfg!(target_os = "windows") {
-        if which("pwsh.exe").is_ok() {
+        if command_exists("pwsh.exe") {
             "pwsh.exe".to_string()
-        } else if which("powershell.exe").is_ok() {
+        } else if command_exists("powershell.exe") {
             "powershell.exe".to_string()
         } else {
             std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
@@ -347,8 +417,8 @@ pub fn detect_installed_agents(candidates: Vec<(String, String)>) -> Vec<Install
     candidates
         .into_iter()
         .map(|(id, command)| {
-            // Prefer the standard `which` lookup (respects current PATH).
-            let installed = if which(&command).is_ok() {
+            // Prefer the current process PATH before trying Nexus-specific fallbacks.
+            let installed = if command_exists(&command) {
                 true
             } else {
                 // Exhaustive fallback: walk all candidate dirs.
@@ -945,9 +1015,11 @@ fn format_command_output(output: std::process::Output) -> String {
 }
 
 fn ensure_command_exists(command: &str) -> Result<(), String> {
-    which(command)
-        .map(|_| ())
-        .map_err(|_| format!("Required command `{command}` was not found on PATH."))
+    if command_exists(command) {
+        Ok(())
+    } else {
+        Err(format!("Required command `{command}` was not found on PATH."))
+    }
 }
 
 fn run_command_checked(
@@ -1247,11 +1319,11 @@ pub fn open_in_file_manager(path: String) -> Result<(), String> {
     };
 
     #[cfg(all(unix, not(target_os = "macos")))]
-    let mut command = if which("xdg-open").is_ok() {
+    let mut command = if command_exists("xdg-open") {
         let mut command = Command::new("xdg-open");
         command.arg(&path);
         command
-    } else if which("gio").is_ok() {
+    } else if command_exists("gio") {
         let mut command = Command::new("gio");
         command.args(["open", &path]);
         command
