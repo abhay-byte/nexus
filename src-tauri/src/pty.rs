@@ -130,7 +130,7 @@ pub fn fix_home_env() {
     // ── Step 1: fix HOME from passwd ──────────────────────────────────────────
     let uid = unsafe { libc::getuid() };
     let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
-    let mut buf = vec![0i8; 4096];
+    let mut buf = vec![0 as libc::c_char; 4096];
     let mut result: *mut libc::passwd = std::ptr::null_mut();
 
     let rc = unsafe {
@@ -352,7 +352,7 @@ pub fn detect_installed_agents(candidates: Vec<(String, String)>) -> Vec<Install
         use std::ffi::CStr;
         let uid = unsafe { libc::getuid() };
         let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
-        let mut buf = vec![0i8; 4096];
+        let mut buf = vec![0 as libc::c_char; 4096];
         let mut result: *mut libc::passwd = std::ptr::null_mut();
         let rc = unsafe {
             libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr(), buf.len(), &mut result)
