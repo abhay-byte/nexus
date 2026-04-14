@@ -108,7 +108,7 @@ export function StatusBar({ project, runningCount, runtimeInfo, health }: Status
         
         <div className="flex items-center gap-1.5">
           <span className="material-symbols-outlined text-xs text-[#a0a0a0]">update</span>
-          <span>V0.1.1</span>
+          <span>V0.1.2</span>
         </div>
       </div>
     </footer>
