@@ -19,21 +19,9 @@
 
 ## Screenshots
 
-| 1. Main Workspace | 2. Add Project |
-|:-:|:-:|
-| ![1. Main Workspace](docs/screenshots/1.png) | ![2. Add Project](docs/screenshots/2.png) |
-
-| 3. Project View | 4. Agent Sessions |
-|:-:|:-:|
-| ![3. Project View](docs/screenshots/3.png) | ![4. Agent Sessions](docs/screenshots/4.png) |
-
-| 5. Split Panes | 6. Kanban Board |
-|:-:|:-:|
-| ![5. Split Panes](docs/screenshots/5.png) | ![6. Kanban Board](docs/screenshots/6.png) |
-
-| 7. Settings | 8. Command Palette |
-|:-:|:-:|
-| ![7. Settings](docs/screenshots/7.png) | ![8. Command Palette](docs/screenshots/8.png) |
+| 1. Main Workspace | 2. Diff View | 3. Settings |
+|:-:|:-:|:-:|
+| ![1. Main Workspace](docs/screenshots/1.png) | ![2. Diff View](docs/screenshots/3.png) | ![3. Settings](docs/screenshots/5.png) |
 
 ---
 
@@ -191,4 +179,4 @@ nexus/
 
 ## License
 
-MIT © 2025 Abhay
+MIT © 2026 Abhay
