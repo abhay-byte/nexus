@@ -1,40 +1,71 @@
 # Nexus Terminal
 
-> **Multi-agent AI terminal workspace** — run Claude Code, Codex CLI, Gemini CLI, Qwen, Aider, and more, side-by-side in a brutalist desktop app.
+<p align="center">
+  <img src="src-tauri/icons/icon.png" width="128" height="128" alt="Nexus Logo">
+</p>
 
-![Main Workspace](docs/screenshots/main_workspace.png)
+<p align="center">
+  <strong>Multi-agent AI terminal workspace</strong><br>
+  Run Claude Code, Codex CLI, Gemini CLI, Qwen, Aider, and more — side-by-side in a brutalist desktop app.
+</p>
 
----
-
-## Features
-
-- **13+ AI coding agents** — Claude Code, Codex CLI, Gemini CLI, Aider, OpenCode, Qwen Code, Junie, Kiro, Kilo Code, Cline, Continue, Goose, Amp — auto-detected on PATH
-- **Terminal tabs per project** — each project has independent terminal tabs; the `+` button opens a new tab
-- **Split panes** — split horizontally or vertically (up to 2×2); the split button toggles 1→2→1
-- **Kanban board** — every project gets a built-in `◈ KANBAN` tab with Todo / In Progress / Done / Blocked columns; tasks persist across restarts
-- **Session persistence** — terminals survive app restarts; layout and sessions are restored automatically
-- **Batched terminal streaming** — noisy agents like Codex are buffered before UI updates so long runs do not thrash the webview
-- **True-color PTY** — `xterm-256color` + `COLORTERM=truecolor` injected; TUI tools (Codex, lazygit, etc.) render correctly  
-- **Credential inheritance** — PTY spawner inherits your full shell environment (API keys, PATH, etc.) so agents are already logged in
-- **Shared MCP registry** — configure MCP once in `Settings -> Agents & MCP`, then let Nexus inject or sync it across every registered project
-- **Workflow add-ons** — bootstrap Spec Kit into real `.specify/` project files, install a project-level `AGENCY.md` specialist, and install Caveman for supported agents from settings with persisted install state across restarts
-- **Brutalist UI** — high-contrast dark mode, Space Grotesk typography, yellow accent (`#ffcc00`), pixel-shadow components
+<p align="center">
+  <a href="https://github.com/abhay-byte/nexus/releases/latest"><img src="https://img.shields.io/github/v/release/abhay-byte/nexus?label=latest&color=ffcc00" alt="Release"></a>
+  <img src="https://img.shields.io/github/license/abhay-byte/nexus?color=ffcc00" alt="License">
+  <img src="https://img.shields.io/github/stars/abhay-byte/nexus?color=ffcc00" alt="Stars">
+</p>
 
 ---
 
 ## Screenshots
 
-| Main Workspace | Add Project |
+| 1. Main Workspace | 2. Add Project |
 |:-:|:-:|
-| ![Main Workspace](docs/screenshots/main_workspace.png) | ![Add Project Dialog](docs/screenshots/add_project_dialog.png) |
+| ![1. Main Workspace](docs/screenshots/1.png) | ![2. Add Project](docs/screenshots/2.png) |
 
-| Add Agent | Settings |
+| 3. Project View | 4. Agent Sessions |
 |:-:|:-:|
-| ![Add Agent](docs/screenshots/add_agent_view.png) | ![Settings](docs/screenshots/settings_panel.png) |
+| ![3. Project View](docs/screenshots/3.png) | ![4. Agent Sessions](docs/screenshots/4.png) |
 
-| Command Palette | Project Settings |
+| 5. Split Panes | 6. Kanban Board |
 |:-:|:-:|
-| ![Command Palette](docs/screenshots/command_palette.png) | ![Project Settings](docs/screenshots/project_settings.png) |
+| ![5. Split Panes](docs/screenshots/5.png) | ![6. Kanban Board](docs/screenshots/6.png) |
+
+| 7. Settings | 8. Command Palette |
+|:-:|:-:|
+| ![7. Settings](docs/screenshots/7.png) | ![8. Command Palette](docs/screenshots/8.png) |
+
+---
+
+## Features
+
+### Multi-Agent Support
+- **13+ AI coding agents** — Claude Code, Codex CLI, Gemini CLI, Aider, OpenCode, Qwen Code, Junie, Kiro, Kilo Code, Cline, Continue, Goose, Amp
+- Auto-detected on PATH — only installed agents appear in the launcher
+- Run multiple agents side-by-side in the same project
+
+### Terminal Management
+- **Terminal tabs per project** — each project has independent terminal tabs
+- **Split panes** — split horizontally or vertically (up to 2×2)
+- **Session persistence** — terminals survive app restarts; layout and sessions restored automatically
+- **True-color PTY** — `xterm-256color` + `COLORTERM=truecolor` for proper TUI rendering
+- **Batched terminal streaming** — noisy agents are buffered to prevent UI thrashing
+
+### Project Organization
+- **Kanban board** — built-in `◈ KANBAN` tab with Todo / In Progress / Done / Blocked columns
+- Tasks persist across restarts
+- Per-project settings and agent configurations
+
+### Configuration & Workflow
+- **Credential inheritance** — PTY spawner inherits full shell environment (API keys, PATH, etc.)
+- **Shared MCP registry** — configure MCP once in Settings, sync across all projects
+- **Workflow add-ons** — bootstrap Spec Kit, install `AGENCY.md` specialist, Caveman integration
+
+### User Interface
+- **Brutalist UI** — high-contrast dark mode, Space Grotesk typography
+- **Yellow accent** (`#ffcc00`) with pixel-shadow components
+- **Command palette** — quick access to all actions
+- Native window decorations optional
 
 ---
 
@@ -42,25 +73,9 @@
 
 > **[⬇ Download latest release](https://github.com/abhay-byte/nexus/releases/latest)**
 
-Installation is package-only now. The release contains exactly four archives:
+### Linux
 
-- `Nexus_linux_x64.tar.gz`
-- `Nexus_linux_arm64.tar.gz`
-- `Nexus_windows_x64.zip`
-- `Nexus_windows_arm64.zip`
-
----
-
-### 🐧 Linux — x64
-
-Run the installer script:
-
-```bash
-./install.sh
-```
-
-Or install manually from the release package:
-
+**x64:**
 ```bash
 tar -xzf Nexus_linux_x64.tar.gz
 cp Nexus_linux_x64/nexus ~/.local/bin/nexus
@@ -68,14 +83,7 @@ chmod +x ~/.local/bin/nexus
 nexus
 ```
 
----
-
-### 🐧 Linux — ARM64
-
-`install.sh` auto-detects `arm64` and downloads `Nexus_linux_arm64.tar.gz`.
-
-Manual install:
-
+**ARM64:**
 ```bash
 tar -xzf Nexus_linux_arm64.tar.gz
 cp Nexus_linux_arm64/nexus ~/.local/bin/nexus
@@ -83,38 +91,19 @@ chmod +x ~/.local/bin/nexus
 nexus
 ```
 
----
-
-### 🪟 Windows — x64
-
-Run the installer script:
-
-```powershell
-./install.ps1
+Or use the installer script:
+```bash
+./install.sh  # Auto-detects architecture
 ```
 
-Or download `Nexus_windows_x64.zip`, extract it, and run `nexus.exe`.
+### Windows
 
----
+Download `Nexus_windows_x64.zip` or `Nexus_windows_arm64.zip`, extract, and run `nexus.exe`.
 
-### 🪟 Windows — ARM64
-
-`install.ps1` auto-detects `arm64` and downloads `Nexus_windows_arm64.zip`.
-
-Or download `Nexus_windows_arm64.zip`, extract it, and run `nexus.exe`.
-
----
-
-## Tech Stack
-
-| Layer | Tech |
-|---|---|
-| Desktop shell | [Tauri v2](https://tauri.app) (Rust) |
-| Frontend | React 18 + TypeScript + Vite |
-| State | Zustand |
-| Terminal | xterm.js via `@xterm/xterm` |
-| PTY backend | `portable-pty` (Rust) |
-| Styling | Tailwind CSS (utility-only) + custom brutalist tokens |
+Or use PowerShell:
+```powershell
+./install.ps1  # Auto-detects architecture
+```
 
 ---
 
@@ -124,12 +113,10 @@ Or download `Nexus_windows_arm64.zip`, extract it, and run `nexus.exe`.
 git clone https://github.com/abhay-byte/nexus.git
 cd nexus
 npm install
-./run.sh          # sources your shell profile then starts dev server
-# OR
 npm run tauri dev
 ```
 
-MCP setup details and preset behavior are documented in [docs/agent-mcp-skills-guide.md](docs/agent-mcp-skills-guide.md).
+For ARM64 cross-compilation, see [docs/building-arm64.md](docs/building-arm64.md).
 
 ---
 
@@ -163,7 +150,18 @@ MCP setup details and preset behavior are documented in [docs/agent-mcp-skills-g
 | Goose | `goose` | Block |
 | Amp | `amp` | |
 
-Only installed agents (detected via `which`) are shown as enabled in the launcher.
+---
+
+## Tech Stack
+
+| Layer | Tech |
+|---|---|
+| Desktop shell | [Tauri v2](https://tauri.app) (Rust) |
+| Frontend | React 18 + TypeScript + Vite |
+| State | Zustand |
+| Terminal | xterm.js via `@xterm/xterm` |
+| PTY backend | `portable-pty` (Rust) |
+| Styling | Tailwind CSS + custom brutalist tokens |
 
 ---
 
@@ -178,19 +176,15 @@ nexus/
 │   │   ├── PaneGrid/       # Split terminal grid
 │   │   ├── TerminalTabBar/ # Terminal tab navigation
 │   │   └── Titlebar/       # Window chrome
-│   ├── store/
-│   │   ├── kanbanStore.ts  # Kanban tasks (persisted to localStorage)
-│   │   ├── projectStore.ts # Projects (persisted to disk)
-│   │   └── sessionStore.ts # Sessions, layouts, tabs (persisted to disk)
-│   └── types/              # Shared TypeScript types
+│   ├── store/              # Zustand stores
+│   └── types/              # TypeScript types
 ├── src-tauri/              # Rust backend
 │   ├── src/
 │   │   ├── lib.rs          # Tauri commands
 │   │   └── pty.rs          # PTY spawn / resize / kill
-│   └── capabilities/       # Tauri permission config
-├── docs/screenshots/       # README screenshots
-├── install.sh              # System-wide install (one command, zero deps)
-└── run.sh                  # Dev launcher (sources shell profile)
+│   └── capabilities/       # Tauri permissions
+├── docs/                   # Documentation
+└── install.sh              # System-wide installer
 ```
 
 ---
