@@ -125,14 +125,7 @@ h1, h2, h3, .brand-font, .headline {
   overflow: hidden;
 }
 
-.terminal-view .xterm {
-  width: 100%;
-  height: 100%;
-}
-
-.terminal-view .xterm-viewport {
-  overflow-y: auto !important;
-}
+/* xterm.js manages its own sizing and viewport — do NOT override */
 
 /* Pane dividers */
 .pane-grid__divider {

@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { KNOWN_AGENTS, PROJECT_SWATCHES } from "../../constants/agents";
+import { getImageDataUrl } from "../../lib/imageDataUrl";
 import type { AddProjectDraft, AgentId } from "../../types";
 
 interface AddProjectDialogProps {
@@ -10,6 +11,15 @@ interface AddProjectDialogProps {
 
 function getNameFromPath(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? "";
+}
+
+function getInitials(name: string) {
+  return name
+    .split(/[\s\-_]+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
 export function AddProjectDialog({
@@ -24,6 +34,21 @@ export function AddProjectDialog({
     mcpServers: [],
   });
   const [submitting, setSubmitting] = useState(false);
+  const [iconPreview, setIconPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!draft.icon) {
+      setIconPreview(null);
+      return;
+    }
+    let cancelled = false;
+    void getImageDataUrl(draft.icon).then((url) => {
+      if (!cancelled) setIconPreview(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.icon]);
 
   const selectedAgentSet = useMemo(
     () => new Set(draft.defaultAgents),
@@ -46,6 +71,25 @@ export function AddProjectDialog({
       path: selected,
       name: current.name || getNameFromPath(selected),
     }));
+  };
+
+  const pickIcon = async () => {
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      title: "Select a PNG icon",
+      filters: [{ name: "Images", extensions: ["png"] }],
+    });
+
+    if (typeof selected !== "string") {
+      return;
+    }
+
+    setDraft((current) => ({ ...current, icon: selected }));
+  };
+
+  const clearIcon = () => {
+    setDraft((current) => ({ ...current, icon: undefined }));
   };
 
   const toggleAgent = (agentId: AgentId) => {
@@ -148,6 +192,50 @@ export function AddProjectDialog({
                   />
                 );
               })}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 mt-4 text-[#1a1a1a] dark:text-[#f5f0e8]">
+            <label className="uppercase font-black text-sm tracking-wider flex justify-between items-end">
+              <span>Project Icon</span>
+              <span className="text-xs opacity-50 font-normal">PNG square image</span>
+            </label>
+            <div className="flex items-center gap-4">
+              <div
+                className="shrink-0 flex items-center justify-center font-black text-sm border-2 border-[#1a1a1a] dark:border-[#f5f0e8]"
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 4,
+                  background: draft.color ?? "#1a1a1a",
+                  color: "#fff",
+                  overflow: "hidden",
+                }}
+              >
+                {iconPreview ? (
+                  <img src={iconPreview} alt="icon" className="w-full h-full object-cover" />
+                ) : (
+                  getInitials(draft.name || "PJ")
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="bg-[#ffcc00] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] text-[#1a1a1a] px-4 py-2 font-black uppercase text-xs neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all"
+                  onClick={() => void pickIcon()}
+                  type="button"
+                >
+                  Pick PNG
+                </button>
+                {draft.icon && (
+                  <button
+                    className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] px-4 py-2 font-black uppercase text-xs hover:bg-[#e63b2e] hover:text-white hover:border-[#e63b2e] transition-all"
+                    onClick={clearIcon}
+                    type="button"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

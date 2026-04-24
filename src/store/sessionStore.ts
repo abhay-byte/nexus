@@ -25,7 +25,7 @@ import type {
 type Orientation = "horizontal" | "vertical";
 const KANBAN_TAB_ID = "__kanban__";
 const SESSION_LOG_LIMIT = 500_000;
-const SESSION_LOG_FLUSH_MS = 48;
+const SESSION_LOG_FLUSH_MS = 100;
 const sessionOutputUnlisteners = new Map<string, Promise<() => void>>();
 const sessionExitUnlisteners = new Map<string, Promise<() => void>>();
 const sessionLogDecoders = new Map<string, TextDecoder>();
@@ -59,6 +59,7 @@ interface SessionStoreState {
   closeTerminalTab: (projectId: string, tabId: string) => void;
   setActiveTerminalTab: (projectId: string, tabId: string) => void;
   launchAgent: (project: Project, agent: AgentConfig, paneId?: string | null) => Promise<void>;
+  launchShell: (project: Project, paneId?: string | null) => Promise<void>;
   splitPane: (projectId: string, orientation: Orientation) => void;
   setPaneFractions: (
     projectId: string,
@@ -612,6 +613,101 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
           error instanceof Error
             ? error.message
             : `Failed to start ${agent.name}.`,
+      });
+    }
+  },
+  launchShell: async (project, preferredPaneId) => {
+    get().ensureLayout(project.id);
+
+    const tabKey = getActiveTabKey(get(), project.id);
+    let chosenPaneId = preferredPaneId ?? null;
+    let chosenLayout = get().layouts[tabKey] ?? createDefaultLayout(tabKey);
+
+    if (!chosenPaneId) {
+      const emptyPane = chosenLayout.panes.find((pane) => pane.sessionId === null);
+      chosenPaneId = emptyPane?.id ?? null;
+    }
+
+    if (!chosenPaneId) {
+      if (chosenLayout.cols < 2) {
+        get().splitPane(project.id, "vertical");
+      } else if (chosenLayout.rows < 2) {
+        get().splitPane(project.id, "horizontal");
+      }
+      chosenLayout = get().layouts[tabKey];
+      chosenPaneId = chosenLayout.panes.find((pane) => pane.sessionId === null)?.id ?? null;
+    }
+
+    if (!chosenPaneId) {
+      set({ error: "All panes are occupied. Split or close a session first." });
+      return;
+    }
+
+    const sessionId = nanoid();
+    const session: Session = {
+      id: sessionId,
+      projectId: project.id,
+      agentId: "shell",
+      ptyId: sessionId,
+      status: "starting",
+      title: `Shell — ${project.name}`,
+      cwd: project.path,
+      command: "",
+      args: [],
+      env: {},
+      paneId: chosenPaneId,
+    };
+
+    set((state) => ({
+      sessions: {
+        ...state.sessions,
+        [sessionId]: session,
+      },
+      sessionLogs: {
+        ...state.sessionLogs,
+        [sessionId]: state.sessionLogs[sessionId] ?? "",
+      },
+      layouts: {
+        ...state.layouts,
+        [tabKey]: {
+          ...state.layouts[tabKey],
+          panes: state.layouts[tabKey].panes.map((pane) =>
+            pane.id === chosenPaneId ? { ...pane, sessionId } : pane,
+          ),
+        },
+      },
+      activePaneIds: {
+        ...state.activePaneIds,
+        [tabKey]: chosenPaneId,
+      },
+      error: null,
+    }));
+
+    try {
+      const remote = parseRemoteProjectPath(project.path);
+      await ensureSessionEventBridge(sessionId);
+      await invokeSafely<string>("spawn_pty", {
+        sessionId,
+        command: remote ? "ssh" : "",
+        args: remote
+          ? [remote.host, "-t", `cd ${shellEscape(remote.remotePath)} && $SHELL`]
+          : [],
+        cwd: remote ? "" : project.path,
+        env: {},
+        cols: 120,
+        rows: 32,
+        shellOverride: get().settings.shellOverride,
+      });
+
+      get().markSessionStatus(sessionId, "running");
+    } catch (error) {
+      await releaseSessionEventBridge(sessionId);
+      get().markSessionStatus(sessionId, "exited");
+      set({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to start shell.",
       });
     }
   },

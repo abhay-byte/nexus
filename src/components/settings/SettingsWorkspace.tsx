@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
+import { open } from "@tauri-apps/plugin-dialog";
 import { KNOWN_AGENTS, PROJECT_SWATCHES } from "../../constants/agents";
 import {
   MCP_AUTO_INSTALL_AGENT_IDS,
@@ -7,6 +8,7 @@ import {
   createMcpServerFromPreset,
   matchesMcpServerPreset,
 } from "../../constants/mcpPresets";
+import { getImageDataUrl } from "../../lib/imageDataUrl";
 import { getAgentMcpInstallLabel } from "../../lib/projectMcpSync";
 import type {
   AgentId,
@@ -657,6 +659,7 @@ function ProjectsPanel({
   const [agencyRunning, setAgencyRunning] = useState(false);
   const [agencyCategory, setAgencyCategory] = useState<string>("");
   const [draftAgencySlug, setDraftAgencySlug] = useState<string>(DEFAULT_AGENCY_AGENT_SLUG);
+  const [iconPreview, setIconPreview] = useState<string | null>(null);
   const agencyFetchRef = useRef(false);
 
   useEffect(() => {
@@ -705,6 +708,33 @@ function ProjectsPanel({
   useEffect(() => {
     setDraftAgencySlug(selectedAgencyConfig.selectedAgentSlug);
   }, [selectedAgencyConfig.selectedAgentSlug, selectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedProject?.icon) {
+      setIconPreview(null);
+      return;
+    }
+    let cancelled = false;
+    void getImageDataUrl(selectedProject.icon).then((url) => {
+      if (!cancelled) setIconPreview(url);
+    }).catch(() => {
+      if (!cancelled) setIconPreview(null);
+    });
+    return () => { cancelled = true; };
+  }, [selectedProject?.icon]);
+
+  const handlePickIcon = async () => {
+    const file = await open({ multiple: false, filters: [{ name: "Image", extensions: ["png"] }] });
+    if (!file || Array.isArray(file)) return;
+    const dataUrl = await getImageDataUrl(file);
+    setIconPreview(dataUrl);
+    patchProject({ icon: file });
+  };
+
+  const handleClearIcon = () => {
+    setIconPreview(null);
+    patchProject({ icon: undefined });
+  };
 
   useEffect(() => {
     if (!agencyAgents.length) {
@@ -932,6 +962,42 @@ function ProjectsPanel({
                       title={swatch}
                     />
                   ))}
+                </div>
+              </div>
+
+              {/* Project Icon */}
+              <div className="space-y-3">
+                <FieldLabel>Project Icon</FieldLabel>
+                <div className="flex items-center gap-4">
+                  {iconPreview ? (
+                    <img
+                      src={iconPreview}
+                      alt="Project icon"
+                      className="h-16 w-16 border-4 border-[#1a1a1a] object-cover dark:border-[#f5f0e8]"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center border-4 border-[#1a1a1a] bg-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#2a2a2a]">
+                      <span className="material-symbols-outlined text-2xl opacity-50">image</span>
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handlePickIcon()}
+                      className="border-4 border-[#1a1a1a] bg-[#0055ff] px-4 py-2 font-headline text-sm font-black uppercase text-white hover:bg-[#1a1a1a] dark:border-[#f5f0e8]"
+                    >
+                      Pick Icon
+                    </button>
+                    {selectedProject.icon ? (
+                      <button
+                        type="button"
+                        onClick={handleClearIcon}
+                        className="border-4 border-[#1a1a1a] bg-[#f5f0e8] px-4 py-2 font-headline text-sm font-black uppercase hover:bg-[#e63b2e] hover:text-white dark:border-[#f5f0e8] dark:bg-[#2a2a2a] dark:text-[#f5f0e8]"
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 

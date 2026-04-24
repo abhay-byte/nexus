@@ -16,6 +16,8 @@ interface TerminalViewProps {
   cursorBlink: boolean;
   /** True when the parent terminal tab is currently visible. */
   isTabActive: boolean;
+  /** True when this pane has keyboard focus. */
+  active: boolean;
 }
 
 export function TerminalView({
@@ -27,14 +29,15 @@ export function TerminalView({
   cursorStyle,
   cursorBlink,
   isTabActive,
+  active,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // Held across renders so the tab-switch effect can call fit() without
-  // tearing down and recreating the terminal.
   const fitAddonRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const renderedLogRef = useRef("");
   const exitNoticeRef = useRef(false);
+  const isTabActiveRef = useRef(isTabActive);
+  isTabActiveRef.current = isTabActive;
 
   const writeToSession = useSessionStore((state) => state.writeToSession);
   const resizeSession = useSessionStore((state) => state.resizeSession);
@@ -43,27 +46,38 @@ export function TerminalView({
   const sessionLog = useSessionStore((state) => state.sessionLogs[session.id] ?? "");
   const sessionStatus = useSessionStore((state) => state.sessions[session.id]?.status ?? session.status);
 
-  const fitVisibleTerminal = () => {
+  // ── Core fit logic (reads latest refs, safe for ResizeObserver) ───────────
+  const doFit = (force = false) => {
     const container = containerRef.current;
     const fitAddon = fitAddonRef.current;
     const term = termRef.current;
-    if (!container || !fitAddon || !term || !isTabActive) return;
+    if (!container || !fitAddon || !term || !isTabActiveRef.current) return;
     if (container.clientWidth < 16 || container.clientHeight < 16) return;
+
+    const prevCols = term.cols;
+    const prevRows = term.rows;
     fitAddon.fit();
-    void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+    if (force || term.cols !== prevCols || term.rows !== prevRows) {
+      void resizeSession(session.id, Math.max(term.cols, 2), Math.max(term.rows, 2));
+    }
   };
 
-  // ── Re-fit when this tab becomes active ─────────────────────────────────
-  // Runs whenever isTabActive flips. When it becomes true the container has
-  // just been un-hidden (display:none → block), so we wait one rAF for
-  // layout to settle then call fit() and sync the PTY dimensions.
+  // ── Re-fit when this tab becomes active or pane gains focus ──────────────
   useEffect(() => {
     if (!isTabActive) return;
-    const raf = requestAnimationFrame(() => {
-      fitVisibleTerminal();
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [isTabActive, resizeSession, session.id]);
+    // Give the browser time to layout the now-visible container
+    const timer = setTimeout(() => {
+      doFit();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [isTabActive, active, session.id]);
+
+  // ── Focus terminal when pane becomes active ──────────────────────────────
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term || !active || !isTabActive) return;
+    term.focus();
+  }, [active, isTabActive]);
 
   // ── Main terminal setup ──────────────────────────────────────────────────
   useEffect(() => {
@@ -73,17 +87,18 @@ export function TerminalView({
     const term = new Terminal({
       convertEol: false,
       scrollback,
-      fontFamily: `${fontFamily}, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace`,
+      fontFamily: `${fontFamily}, 'JetBrainsMono Nerd Font', 'CaskaydiaCove Nerd Font', 'FiraCode Nerd Font', 'Hack Nerd Font', 'Symbols Nerd Font Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Noto Sans Mono', 'DejaVu Sans Mono', 'Liberation Mono', 'Consolas', monospace`,
       fontSize: fontSize + paneZoom,
       fontWeight: "400",
       fontWeightBold: "700",
       letterSpacing: 0,
-      lineHeight: 1.2,
+      lineHeight: 1.0,
       cursorStyle,
       cursorBlink: false, /* forced off per request */
       allowTransparency: false,
       macOptionIsMeta: true,
       rightClickSelectsWord: true,
+      screenReaderMode: false,
       theme: {
         background: "#0d0d0d",
         foreground: "#d4d4d4",
@@ -119,6 +134,7 @@ export function TerminalView({
     term.loadAddon(fitAddon);
     term.loadAddon(linksAddon);
     term.open(container);
+
     const initialLog = useSessionStore.getState().sessionLogs[session.id] ?? "";
     renderedLogRef.current = initialLog;
     if (initialLog) {
@@ -128,15 +144,32 @@ export function TerminalView({
     }
     exitNoticeRef.current = false;
 
-    // Defer the initial fit by one rAF so the container has stable dimensions.
-    const initialFitRaf = requestAnimationFrame(() => {
-      fitVisibleTerminal();
-    });
+    // Wait for fonts to load before fitting so cell dimensions are correct.
+    const initialFitTimer = setTimeout(() => {
+      void document.fonts.ready.then(() => {
+        doFit();
+      });
+    }, 50);
 
+    // Debounced ResizeObserver — prevents fit() loops when layout is unstable.
+    let resizeDebounceTimer: number | null = null;
     const resizeObserver = new ResizeObserver(() => {
-      fitVisibleTerminal();
+      if (resizeDebounceTimer !== null) {
+        window.clearTimeout(resizeDebounceTimer);
+      }
+      resizeDebounceTimer = window.setTimeout(() => {
+        resizeDebounceTimer = null;
+        doFit();
+      }, 150);
     });
     resizeObserver.observe(container);
+
+    // Periodic re-fit as a fallback for TUIs that don't reliably respond
+    // to SIGWINCH (e.g. opentui). Forces a resize_pty heartbeat even when
+    // dimensions haven't changed so the PTY stays in sync.
+    const periodicFitTimer = window.setInterval(() => {
+      doFit(true);
+    }, 3000);
 
     const disposeData = term.onData((data) => {
       void writeToSession(session.id, new TextEncoder().encode(data));
@@ -179,7 +212,11 @@ export function TerminalView({
     return () => {
       fitAddonRef.current = null;
       termRef.current = null;
-      cancelAnimationFrame(initialFitRaf);
+      clearTimeout(initialFitTimer);
+      window.clearInterval(periodicFitTimer);
+      if (resizeDebounceTimer !== null) {
+        window.clearTimeout(resizeDebounceTimer);
+      }
       disposeData.dispose();
       resizeObserver.disconnect();
       container.removeEventListener("contextmenu", onContextMenu);
@@ -201,44 +238,80 @@ export function TerminalView({
     writeToSession,
   ]);
 
+  // ── Write new session output ─────────────────────────────────────────────
+  // CRITICAL: only write to xterm.js when this tab is visible. Hidden
+  // terminals still accumulate log state for search/export, but we skip
+  // the actual xterm write to prevent renderer overload / DOM bloat.
   useEffect(() => {
     const term = termRef.current;
-    if (!term) {
-      return;
-    }
+    if (!term || !isTabActive) return;
 
     const previous = renderedLogRef.current;
-    if (sessionLog === previous) {
-      return;
-    }
+    if (sessionLog === previous) return;
 
-    if (!sessionLog.startsWith(previous)) {
-      term.reset();
+    if (sessionLog.startsWith(previous)) {
+      const delta = sessionLog.slice(previous.length);
       renderedLogRef.current = sessionLog;
-      if (sessionLog) {
-        term.write(sessionLog, () => {
+      if (delta) {
+        term.write(delta, () => {
           term.options.cursorBlink = false;
         });
       }
       return;
     }
 
-    const delta = sessionLog.slice(previous.length);
-    renderedLogRef.current = sessionLog;
-    if (!delta) {
+    if (previous.endsWith(sessionLog)) {
+      // Log was truncated from the beginning (hits 500K limit).
+      // Do NOT reset the terminal — TUI state would be destroyed.
+      renderedLogRef.current = sessionLog;
       return;
     }
 
-    term.write(delta, () => {
-      term.options.cursorBlink = false;
-    });
-  }, [sessionLog]);
+    // Unexpected mismatch (should be rare). Reset and rewrite.
+    term.reset();
+    renderedLogRef.current = sessionLog;
+    if (sessionLog) {
+      term.write(sessionLog, () => {
+        term.options.cursorBlink = false;
+      });
+    }
+  }, [sessionLog, isTabActive]);
+
+  // ── Catch-up when tab becomes visible after being hidden ─────────────────
+  useEffect(() => {
+    if (!isTabActive) return;
+    const term = termRef.current;
+    if (!term) return;
+
+    const previous = renderedLogRef.current;
+    const current = sessionLog;
+    if (current === previous) return;
+
+    if (current.startsWith(previous)) {
+      const delta = current.slice(previous.length);
+      renderedLogRef.current = current;
+      if (delta) {
+        term.write(delta, () => {
+          term.options.cursorBlink = false;
+        });
+      }
+    } else if (!previous.endsWith(current)) {
+      // We missed output while hidden — reset and catch up
+      term.reset();
+      renderedLogRef.current = current;
+      if (current) {
+        term.write(current, () => {
+          term.options.cursorBlink = false;
+        });
+      }
+    } else {
+      renderedLogRef.current = current;
+    }
+  }, [isTabActive, sessionLog]);
 
   useEffect(() => {
     const term = termRef.current;
-    if (!term) {
-      return;
-    }
+    if (!term) return;
 
     if (sessionStatus === "exited") {
       if (!exitNoticeRef.current) {

@@ -100,6 +100,15 @@ function App() {
   const closeGitDiff = useCallback(() => setGitDiffOpen(false), []);
   const toggleGitDiff = useCallback(() => setGitDiffOpen((open) => !open), []);
 
+  const sidebarCollapsed = settings.sidebarCollapsed;
+  const sidebarWidth = settings.sidebarWidth;
+  const toggleSidebar = useCallback(() => {
+    upsertSettings({ sidebarCollapsed: !sidebarCollapsed });
+  }, [sidebarCollapsed, upsertSettings]);
+  const setSidebarWidth = useCallback((width: number) => {
+    upsertSettings({ sidebarWidth: width });
+  }, [upsertSettings]);
+
   useEffect(() => {
     let active = true;
     const fetchHealth = async () => {
@@ -210,7 +219,6 @@ function App() {
   useEffect(() => {
     if (activeProject) {
       clearProjectAttention(activeProject.id);
-      // Auto-spawn intentionally disabled: user should manually click agents
     }
   }, [activeProject, clearProjectAttention]);
 
@@ -314,6 +322,14 @@ function App() {
 
     void launchAgentForProject(project, agent, paneId);
   }, [activeProject, launchAgentForProject, settings.customAgents]);
+
+  const launchShell = useCallback((paneId?: string, projectOverride?: Project) => {
+    const project = projectOverride ?? activeProject;
+    if (!project) {
+      return;
+    }
+    void useSessionStore.getState().launchShell(project, paneId);
+  }, [activeProject]);
 
   const handleRemoveProject = useCallback(async (projectId: string) => {
     await killSessionsForProject(projectId);
@@ -423,6 +439,8 @@ function App() {
           projects={projects}
           activeProjectId={activeProjectId}
           projectCounts={projectCounts}
+          collapsed={sidebarCollapsed}
+          width={sidebarWidth}
           onSelectProject={setActiveProject}
           onAddProject={openAddProject}
           onRemoveProject={handleRemoveProject}
@@ -433,6 +451,8 @@ function App() {
             }
           }}
           onOpenSettings={() => setSettingsOpen(true)}
+          onToggleCollapse={toggleSidebar}
+          onResizeWidth={setSidebarWidth}
         />
 
         <main className="flex-1 flex flex-col bg-[#e8e3da] dark:bg-[#1a1a1a] p-4 gap-4 overflow-hidden relative">
@@ -487,6 +507,7 @@ function App() {
                             layoutKey={tab.id}
                             isTabActive={tab.id === activeTabId}
                             onLaunchAgent={(agentId, paneId) => launchAgent(agentId, paneId, project)}
+                            onLaunchShell={(paneId) => launchShell(paneId, project)}
                           />
                         </div>
                       ))}

@@ -37,6 +37,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customAgents: [],
   mcpServers: [],
   cavemanInstalledAgentIds: [],
+  sidebarCollapsed: false,
+  sidebarWidth: 256,
 };
 
 function sanitizeMcpServers(settings: Pick<AppSettings, "mcpServers">) {

@@ -42,6 +42,7 @@ export interface Project {
   name: string;
   path: string;
   color: string;
+  icon?: string; // Absolute path to a PNG image file
   defaultAgents: AgentId[];
   mcpServers: McpServerConfig[];
   agencyAgent?: AgencyAgentProjectConfig;
@@ -62,6 +63,8 @@ export interface AppSettings {
   customAgents: AgentConfig[];
   mcpServers: McpServerConfig[];
   cavemanInstalledAgentIds: AgentId[];
+  sidebarCollapsed: boolean;
+  sidebarWidth: number;
 }
 
 export interface PersistedProjects {
@@ -134,6 +137,7 @@ export interface AddProjectDraft {
   name: string;
   path: string;
   color: string;
+  icon?: string;
   defaultAgents: AgentId[];
   mcpServers: McpServerConfig[];
 }

@@ -586,6 +586,27 @@ pub async fn spawn_pty(
         }
     });
 
+    // Force SIGWINCH after the child process has had time to initialize its
+    // TUI.  Without this, TUI programs (opencode / opentui) that query the
+    // terminal size only once at startup can end up with stale cols/rows if
+    // the frontend's initial fit() → resize_pty round-trip hasn't landed yet.
+    {
+        let sigwinch_session = Arc::clone(&session);
+        let sigwinch_cols = cols;
+        let sigwinch_rows = rows;
+        thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if let Ok(master) = sigwinch_session.master.lock() {
+                let _ = master.resize(PtySize {
+                    rows: sigwinch_rows,
+                    cols: sigwinch_cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                });
+            }
+        });
+    }
+
     Ok(session_id)
 }
 

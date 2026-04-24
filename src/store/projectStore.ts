@@ -86,6 +86,7 @@ export const useProjectStore = create<ProjectStoreState>()(
         name: draft.name.trim(),
         path: draft.path.trim(),
         color: draft.color || PROJECT_SWATCHES[0],
+        icon: draft.icon,
         defaultAgents: draft.defaultAgents,
         mcpServers: draft.mcpServers ?? [],
         agencyAgent: {
@@ -125,6 +126,7 @@ export const useProjectStore = create<ProjectStoreState>()(
               name: patch.name?.trim() ?? project.name,
               path: patch.path?.trim() ?? project.path,
               color: patch.color ?? project.color,
+              icon: patch.icon ?? project.icon,
               defaultAgents: patch.defaultAgents ?? project.defaultAgents,
               mcpServers: patch.mcpServers ?? project.mcpServers,
               agencyAgent: patch.agencyAgent ?? project.agencyAgent,

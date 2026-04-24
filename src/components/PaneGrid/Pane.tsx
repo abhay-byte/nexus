@@ -13,6 +13,7 @@ interface PaneProps {
   isTabActive: boolean;
   onFocus: () => void;
   onLaunchAgent: (agentId: string, paneId: string) => void;
+  onLaunchShell: (paneId: string) => void;
 }
 
 export function Pane({
@@ -25,6 +26,7 @@ export function Pane({
   isTabActive,
   onFocus,
   onLaunchAgent,
+  onLaunchShell,
 }: PaneProps) {
   const settings = useSessionStore((state) => state.settings);
   const killSession = useSessionStore((state) => state.killSession);
@@ -105,6 +107,7 @@ export function Pane({
               cursorStyle={settings.cursorStyle}
               cursorBlink={settings.cursorBlink}
               isTabActive={isTabActive}
+              active={active}
             />
           </div>
         ) : (
@@ -135,6 +138,17 @@ export function Pane({
                 </button>
               ));
               })()}
+              <button
+                className="bg-[#1a1a1a] dark:bg-[#f5f0e8] text-white dark:text-[#1a1a1a] border-2 border-[#1a1a1a] dark:border-[#f5f0e8] px-4 py-2 font-['Space_Grotesk'] font-black uppercase neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8] hover:translate-x-[2px] transition-all flex items-center gap-2 hover:bg-[#333] dark:hover:bg-white"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onLaunchShell(pane.id);
+                }}
+                type="button"
+              >
+                <span className="material-symbols-outlined text-sm">terminal</span>
+                Shell
+              </button>
             </div>
           </div>
         )}
