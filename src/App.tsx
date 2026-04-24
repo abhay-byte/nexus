@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { exists, readTextFile } from "@tauri-apps/plugin-fs";
-import { AgentBar } from "./components/AgentBar/AgentBar";
 import { PaneGrid } from "./components/PaneGrid/PaneGrid";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { StatusBar } from "./components/StatusBar/StatusBar";
@@ -300,16 +299,6 @@ function App() {
 
 
 
-  const activeSessions = useMemo(
-    () =>
-      activeProject
-        ? Object.values(sessions).filter(
-            (session) => session.projectId === activeProject.id,
-          )
-        : [],
-    [activeProject, sessions],
-  );
-
   const launchAgent = useCallback((agentId: string, paneId?: string, projectOverride?: Project) => {
     const project = projectOverride ?? activeProject;
     if (!project) {
@@ -447,28 +436,6 @@ function App() {
         />
 
         <main className="flex-1 flex flex-col bg-[#e8e3da] dark:bg-[#1a1a1a] p-4 gap-4 overflow-hidden relative">
-          <AgentBar
-            project={activeProject}
-            sessions={activeSessions}
-            installedAgents={installedAgents}
-            customAgents={settings.customAgents}
-            onLaunchAgent={launchAgent}
-            onFocusAgent={(sessionId) => {
-              const session = sessions[sessionId];
-              if (session) {
-                focusPane(session.projectId, session.paneId);
-              }
-            }}
-            onSplit={(orientation) => {
-              if (activeProject) {
-                splitPane(activeProject.id, orientation);
-              }
-            }}
-            onAddCustomAgent={() => setCustomAgentOpen(true)}
-            onUpdateProject={updateProject}
-            onSyncProjectAgencyAgent={handleSyncProjectAgencyAgent}
-          />
-
           <section className="flex-1 min-h-0 relative">
             {loading && !bootstrapped ? (
               <div className="flex flex-col items-center justify-center h-full bg-[#f5f0e8] border-4 border-[#1a1a1a] neo-shadow">
@@ -495,6 +462,8 @@ function App() {
                         onSelectTab={(tabId) => setActiveTerminalTab(project.id, tabId)}
                         onAddTab={() => addTerminalTab(project.id)}
                         onCloseTab={(tabId) => closeTerminalTab(project.id, tabId)}
+                        onSplitHorizontal={() => splitPane(project.id, "horizontal")}
+                        onSplitVertical={() => splitPane(project.id, "vertical")}
                       />
 
                       <div

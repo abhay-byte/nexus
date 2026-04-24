@@ -8,6 +8,8 @@ interface TerminalTabBarProps {
   onSelectTab: (tabId: string) => void;
   onAddTab: () => void;
   onCloseTab: (tabId: string) => void;
+  onSplitHorizontal?: () => void;
+  onSplitVertical?: () => void;
 }
 
 export function TerminalTabBar({
@@ -16,6 +18,8 @@ export function TerminalTabBar({
   onSelectTab,
   onAddTab,
   onCloseTab,
+  onSplitHorizontal,
+  onSplitVertical,
 }: TerminalTabBarProps) {
   const kanbanActive = activeTabId === KANBAN_TAB_ID;
 
@@ -80,6 +84,30 @@ export function TerminalTabBar({
       >
         +
       </button>
+
+      <div className="flex-1 min-w-0" />
+
+      {/* Split controls */}
+      <div className="flex items-center gap-1 px-2 border-l-2 border-[#333] shrink-0">
+        <button
+          className="material-symbols-outlined cursor-pointer hover:text-[#ffcc00] disabled:opacity-30 bg-transparent border-none text-[#888] text-lg px-1"
+          onClick={onSplitHorizontal}
+          disabled={!onSplitHorizontal}
+          title="Horizontal split"
+          type="button"
+        >
+          splitscreen_bottom
+        </button>
+        <button
+          className="material-symbols-outlined cursor-pointer hover:text-[#ffcc00] disabled:opacity-30 bg-transparent border-none text-[#888] text-lg px-1"
+          onClick={onSplitVertical}
+          disabled={!onSplitVertical}
+          title="Vertical split"
+          type="button"
+        >
+          splitscreen_right
+        </button>
+      </div>
     </div>
   );
 }
