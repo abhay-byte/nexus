@@ -15,6 +15,7 @@ import { TerminalTabBar, KANBAN_TAB_ID } from "./components/TerminalTabBar/Termi
 import { KanbanBoard } from "./components/Kanban/KanbanBoard";
 import { GitDiffPanel } from "./components/GitDiffPanel/GitDiffPanel";
 import { ProjectDirectoryPanel } from "./components/ProjectDirectoryPanel/ProjectDirectoryPanel";
+import { ResourceMonitorPanel } from "./components/ResourceMonitorPanel/ResourceMonitorPanel";
 import { KNOWN_AGENTS } from "./constants/agents";
 import { matchesKeybinding } from "./constants/keybindings";
 import { syncProjectMcpFiles } from "./lib/projectMcpSync";
@@ -92,6 +93,8 @@ function App() {
   const closeTerminalTab = useSessionStore((state) => state.closeTerminalTab);
   const setActiveTerminalTab = useSessionStore((state) => state.setActiveTerminalTab);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [resourceMonitorOpen, setResourceMonitorOpen] = useState(false);
+  const toggleResourceMonitor = useCallback(() => setResourceMonitorOpen((open) => !open), []);
   const [gitDiffOpen, setGitDiffOpen] = useState(false);
   const [customAgentOpen, setCustomAgentOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -104,6 +107,9 @@ function App() {
 
   const [projectPanelCollapsed, setProjectPanelCollapsed] = useState(false);
   const [projectPanelWidth, setProjectPanelWidth] = useState(240);
+  const [resourceMonitorWidth, setResourceMonitorWidth] = useState(380);
+  const [gitDiffWidth, setGitDiffWidth] = useState(480);
+  const [rightPanelTab, setRightPanelTab] = useState<"git" | "monitor">("git");
   const toggleProjectPanel = useCallback(() => setProjectPanelCollapsed((v) => !v), []);
 
   const sidebarCollapsed = settings.sidebarCollapsed;
@@ -556,6 +562,8 @@ function App() {
                         onOpenGitDiff={toggleGitDiff}
                         onOpenSettings={() => setSettingsOpen((open) => !open)}
                         onToggleProjectPanel={toggleProjectPanel}
+                        onToggleResourceMonitor={toggleResourceMonitor}
+                        resourceMonitorActive={resourceMonitorOpen}
                         agencyAgent={project.agencyAgent}
                         onUpdateAgencyAgent={(patch) => void updateProject(project.id, { agencyAgent: { enabled: project.agencyAgent?.enabled ?? false, selectedAgentSlug: project.agencyAgent?.selectedAgentSlug ?? "agents-orchestrator", ...patch } })}
                         onListAgencyAgents={handleListAgencyAgents}
@@ -632,7 +640,63 @@ function App() {
                 >×</button>
               </div>
             ) : null}
+
             </div>
+
+            {/* Right panel: Git Diff + Resource Monitor (tabbed when both open) */}
+            {(gitDiffOpen || resourceMonitorOpen) && (
+              <div className="flex flex-col h-full shrink-0">
+                {/* Tabs */}
+                {gitDiffOpen && resourceMonitorOpen && (
+                  <div className="flex border-b-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#e8e3da] dark:bg-[#252525] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setRightPanelTab("git")}
+                      className={`flex-1 px-3 py-2 font-mono text-[10px] font-bold uppercase border-r-2 border-[#1a1a1a] dark:border-[#f5f0e8] ${
+                        rightPanelTab === "git"
+                          ? "bg-[#ffcc00] text-[#1a1a1a]"
+                          : "text-[#1a1a1a] dark:text-[#f5f0e8] hover:bg-white dark:hover:bg-[#1a1a1a]"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[13px] align-middle mr-1">difference</span>
+                      Git Diff
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRightPanelTab("monitor")}
+                      className={`flex-1 px-3 py-2 font-mono text-[10px] font-bold uppercase ${
+                        rightPanelTab === "monitor"
+                          ? "bg-[#ffcc00] text-[#1a1a1a]"
+                          : "text-[#1a1a1a] dark:text-[#f5f0e8] hover:bg-white dark:hover:bg-[#1a1a1a]"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[13px] align-middle mr-1">bar_chart</span>
+                      Resources
+                    </button>
+                  </div>
+                )}
+
+                {/* Content */}
+                {gitDiffOpen && (!resourceMonitorOpen || rightPanelTab === "git") && (
+                  <GitDiffPanel
+                    open={gitDiffOpen}
+                    project={activeProject}
+                    onClose={closeGitDiff}
+                    width={gitDiffWidth}
+                    onResizeWidth={setGitDiffWidth}
+                  />
+                )}
+                {resourceMonitorOpen && (!gitDiffOpen || rightPanelTab === "monitor") && (
+                  <ResourceMonitorPanel
+                    open={resourceMonitorOpen}
+                    onClose={() => setResourceMonitorOpen(false)}
+                    health={health}
+                    width={resourceMonitorWidth}
+                    onResizeWidth={setResourceMonitorWidth}
+                  />
+                )}
+              </div>
+            )}
           </section>
         </main>
       </div>
@@ -688,13 +752,6 @@ function App() {
         onInstallCaveman={handleInstallCaveman}
         onListAgencyAgents={handleListAgencyAgents}
         onSyncProjectAgencyAgent={handleSyncProjectAgencyAgent}
-      />
-
-      {/* Git Diff Panel */}
-      <GitDiffPanel
-        open={gitDiffOpen}
-        project={activeProject}
-        onClose={closeGitDiff}
       />
 
       {searchOpen ? (

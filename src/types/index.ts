@@ -161,3 +161,10 @@ export interface SystemHealth {
   ram_used: number;
   ram_total: number;
 }
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  cpu_usage: number;
+  memory_mb: number;
+}
+

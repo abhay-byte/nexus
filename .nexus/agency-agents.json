@@ -1,10 +1,10 @@
 {
-  "category": "project-management",
+  "category": "specialized",
   "enabled": true,
   "installed_path": "/home/abhay/repos/nexus/AGENCY.md",
-  "name": "Project Manager Agent Personality",
-  "slug": "project-manager-senior",
-  "source_path": "/tmp/nexus-agency-agents-1776185247007-33692/repo/project-management/project-manager-senior.md",
+  "name": "AgentsOrchestrator Agent Personality",
+  "slug": "agents-orchestrator",
+  "source_path": "/tmp/nexus-agency-agents-1777092212252-316063/repo/specialized/agents-orchestrator.md",
   "source_repo": "https://github.com/msitarzewski/agency-agents.git",
   "version": 1
 }

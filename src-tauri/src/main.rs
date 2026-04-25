@@ -6,7 +6,7 @@ mod state;
 use crate::{
     pty::{ 
         bootstrap_spec_kit, detect_installed_agents, git_branches, git_checkout_branch, git_diff, git_diff_file, git_status_count, install_caveman, kill_pty,
-        list_agency_agents, open_in_file_manager, resize_pty, runtime_info, spawn_pty, sync_project_agency_agent, write_pty,
+        list_agency_agents, list_processes, open_in_file_manager, resize_pty, runtime_info, spawn_pty, sync_project_agency_agent, write_pty,
     },
     state::AppState,
 };
@@ -40,6 +40,8 @@ fn main() {
             install_caveman,
             list_agency_agents,
             sync_project_agency_agent,
+            list_processes,
+            crate::pty::kill_process,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Nexus application");

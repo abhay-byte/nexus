@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
 import type { Project } from "../../types";
 
+// ── Resizable panel wrapper (shared chrome) ─────────────────────────────────
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface GitDiffLine {
@@ -43,6 +45,8 @@ interface GitDiffPanelProps {
   open: boolean;
   project: Project | null;
   onClose: () => void;
+  width: number;
+  onResizeWidth: (width: number) => void;
 }
 
 // ── File type detection ──────────────────────────────────────────────────────
@@ -523,7 +527,7 @@ function FileListItem({
 
 // ── Main Panel ───────────────────────────────────────────────────────────────
 
-export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose }: GitDiffPanelProps) {
+export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose, width, onResizeWidth }: GitDiffPanelProps) {
   const [diffResult, setDiffResult] = useState<GitDiffResult | null>(null);
   const [branches, setBranches] = useState<GitBranch[]>([]);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
@@ -533,6 +537,32 @@ export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose 
   const [error, setError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const startResize = useCallback(
+    (event: React.PointerEvent) => {
+      event.preventDefault();
+      setIsResizing(true);
+      const startX = event.clientX;
+      const startWidth = width;
+
+      const onMove = (moveEvent: PointerEvent) => {
+        const delta = startX - moveEvent.clientX;
+        const next = Math.min(Math.max(startWidth + delta, 360), 900);
+        onResizeWidth(next);
+      };
+
+      const onUp = () => {
+        setIsResizing(false);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [width, onResizeWidth],
+  );
 
   const fetchDiff = useCallback(async () => {
     if (!project) return;
@@ -623,18 +653,15 @@ export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose 
 
   return (
     <div
-      className={`fixed inset-0 z-[70] flex justify-start transition-all duration-300 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
+      className="relative flex flex-col h-full bg-[#f5f0e8] dark:bg-[#0e0e0e] border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] shrink-0"
+      style={{ width }}
     >
-      {/* Backdrop */}
+      {/* Resize handle on left edge */}
       <div
-        className={`absolute inset-0 bg-[#1a1a1a]/40 dark:bg-black/80 backdrop-blur-sm transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0"}`}
-        onClick={onClose}
+        className={`absolute top-0 left-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[#ffcc00] hover:opacity-50 transition-colors ${isResizing ? "bg-[#ffcc00] opacity-50" : ""}`}
+        onPointerDown={startResize}
+        title="Drag to resize"
       />
-
-      {/* Panel */}
-      <div
-        className={`relative w-full max-w-4xl bg-[#f5f0e8] dark:bg-[#0e0e0e] border-r-8 border-[#1a1a1a] dark:border-[#f5f0e8] h-full shadow-2xl flex flex-col transition-transform duration-300 ${open ? "translate-x-0" : "-translate-x-full"}`}
-      >
         {/* ── Panel Header ─────────────────────────────────────────────────── */}
         <div className="p-6 border-b-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#ffcc00] dark:bg-[#ffcc00] flex justify-between items-start shrink-0 text-[#1a1a1a]">
           <div className="flex-1 min-w-0">
@@ -812,7 +839,6 @@ export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose 
             <span className="material-symbols-outlined font-black" style={{ fontSize: "20px" }}>close</span>
           </button>
         </div>
-      </div>
     </div>
   );
 });

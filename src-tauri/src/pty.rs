@@ -270,6 +270,56 @@ pub fn system_health(state: State<'_, AppState>) -> SystemHealth {
     }
 }
 
+#[derive(Serialize, Clone)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub name: String,
+    pub cpu_usage: f32,
+    pub memory_mb: f64,
+}
+
+#[tauri::command]
+pub fn list_processes(state: State<'_, AppState>) -> Vec<ProcessInfo> {
+    let mut sys = state.sys.lock().unwrap();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    sys.refresh_cpu_usage();
+    sys.refresh_memory();
+
+    let mut processes: Vec<ProcessInfo> = sys
+        .processes()
+        .values()
+        .map(|p| ProcessInfo {
+            pid: p.pid().as_u32(),
+            name: p.name().to_string_lossy().into_owned(),
+            cpu_usage: p.cpu_usage(),
+            memory_mb: p.memory() as f64 / 1_048_576.0,
+        })
+        .filter(|p| p.cpu_usage > 0.0 || p.memory_mb > 1.0)
+        .collect();
+
+    processes.sort_by(|a, b| b.cpu_usage.partial_cmp(&a.cpu_usage).unwrap_or(std::cmp::Ordering::Equal));
+    processes
+}
+
+#[tauri::command]
+pub fn kill_process(pid: u32) -> Result<(), String> {
+    use sysinfo::{Pid, Signal};
+    let pid = Pid::from_u32(pid);
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    if let Some(process) = sys.processes().get(&pid) {
+        match process.kill_with(Signal::Kill) {
+            Some(true) => Ok(()),
+            Some(false) => Err(format!("Failed to kill process {}", pid)),
+            None => Err(format!("Kill not supported for process {}", pid)),
+        }
+    } else {
+        Err(format!("Process {} not found", pid))
+    }
+}
+
+
 fn default_shell(shell_override: Option<String>) -> String {
     if let Some(shell) = shell_override.filter(|value| !value.trim().is_empty()) {
         return shell;

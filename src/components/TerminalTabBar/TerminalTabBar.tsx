@@ -22,6 +22,8 @@ interface TerminalTabBarProps {
   onOpenGitDiff?: () => void;
   onOpenSettings?: () => void;
   onToggleProjectPanel?: () => void;
+  onToggleResourceMonitor?: () => void;
+  resourceMonitorActive?: boolean;
   agencyAgent?: AgencyAgentProjectConfig;
   onUpdateAgencyAgent?: (patch: Partial<AgencyAgentProjectConfig>) => void;
   onListAgencyAgents?: () => Promise<AgencyAgentOption[]>;
@@ -259,6 +261,8 @@ export function TerminalTabBar({
   onOpenGitDiff,
   onOpenSettings,
   onToggleProjectPanel,
+  onToggleResourceMonitor,
+  resourceMonitorActive,
   agencyAgent,
   onUpdateAgencyAgent,
   onListAgencyAgents,
@@ -429,6 +433,22 @@ export function TerminalTabBar({
             splitscreen_right
           </button>
         </div>
+
+        {/* Resource monitor toggle */}
+        {onToggleResourceMonitor && (
+          <div className="flex items-center gap-1 px-3 border-l-2 border-[#333] shrink-0">
+            <button
+              className={`material-symbols-outlined cursor-pointer disabled:opacity-30 bg-transparent border-none text-lg px-1 ${
+                resourceMonitorActive ? "text-[#ffcc00]" : "text-[#888] hover:text-[#ffcc00]"
+              }`}
+              onClick={onToggleResourceMonitor}
+              title="Resource monitor"
+              type="button"
+            >
+              bar_chart
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
