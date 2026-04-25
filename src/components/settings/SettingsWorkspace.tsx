@@ -853,9 +853,9 @@ function ProjectsPanel({
       <SectionHeading accent="#ffcc00" label="Projects" />
 
       {/* Registry header + list */}
-      <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-        {/* Left: project list */}
-        <div className="flex flex-col gap-4">
+      <div className="grid items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+        {/* Left: project list — sticky so it stays visible while scrolling the right column */}
+        <div className="sticky top-0 flex flex-col gap-4 self-start mt-4">
           <div className="border-4 border-[#1a1a1a] bg-white p-5 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
             <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Workspace Registry</p>
             <p className="mt-2 font-headline text-4xl font-black uppercase leading-none">
@@ -1427,41 +1427,27 @@ function AgentsPanel({
         <StatTile label="MCP Servers" value={`${settings.mcpServers.length}`} accent="#10B981" />
       </div>
 
-      <div className="space-y-5 border-4 border-[#1a1a1a] bg-white p-6 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="space-y-4 border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">MCP Server Registry</p>
-            <p className="mt-1 font-headline text-2xl font-black uppercase leading-none">Global Context Bridge</p>
-            <p className="mt-2 max-w-3xl font-body text-sm leading-relaxed opacity-70">
-              MCP servers now live here and apply to every registered project. Nexus resolves project-scoped values when it syncs agent files or launches runtime-only MCP hosts, so presets like filesystem still target the active project safely.
-            </p>
-            <p className="mt-2 max-w-3xl font-body text-sm leading-relaxed opacity-70">
-              Auto-wired agents: <span className="font-mono">{Array.from(autoSyncAgentNames.values()).join(" + ")}</span>. Manual agents still require their native MCP setup.
-            </p>
-            <p className="mt-2 max-w-3xl font-body text-sm leading-relaxed opacity-70">
-              Codex merges Nexus-managed MCP with `~/.codex/config.toml`. Nexus skips duplicate Codex injections, and `/mcp` entries prefixed with <span className="font-mono">nexus_</span> are the ones injected by Nexus.
-            </p>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] opacity-60">
-              Applies to {projects.length} registered project{projects.length === 1 ? "" : "s"} • Guide: docs/agent-mcp-skills-guide.md
+            <p className="mt-0.5 font-headline text-xl font-black uppercase leading-none">Global Context Bridge</p>
+            <p className="mt-1 max-w-3xl font-body text-xs leading-relaxed opacity-70">
+              Shared MCP servers apply to every project. Auto-wired: <span className="font-mono">{Array.from(autoSyncAgentNames.values()).join(" + ") || "none"}</span>. Applies to {projects.length} project{projects.length === 1 ? "" : "s"}.
             </p>
           </div>
           <button
             type="button"
             onClick={addServer}
-            className="border-4 border-[#1a1a1a] bg-[#ffcc00] px-4 py-2 font-headline text-sm font-black uppercase hover:bg-[#1a1a1a] hover:text-[#f5f0e8] dark:border-[#f5f0e8]"
+            className="shrink-0 border-4 border-[#1a1a1a] bg-[#ffcc00] px-3 py-2 font-headline text-xs font-black uppercase hover:bg-[#1a1a1a] hover:text-[#f5f0e8] dark:border-[#f5f0e8]"
           >
             Add MCP Server
           </button>
         </div>
 
-        <div className="space-y-3">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Preset Catalog</p>
-            <p className="mt-1 font-body text-sm leading-relaxed opacity-70">
-              These presets come from upstream MCP documentation and are tuned for Nexus’s current stdio `command + args + env` model plus per-agent auto-install adapters.
-            </p>
-          </div>
-          <div className="grid gap-3 xl:grid-cols-2">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Preset Catalog</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {MCP_SERVER_PRESETS.map((preset) => {
               const autoInstall = (preset.autoInstallAgents ?? [])
                 .map((agentId) => autoSyncAgentNames.get(agentId))
@@ -1475,7 +1461,7 @@ function AgentsPanel({
                   description={preset.description}
                   docsUrl={preset.docsUrl}
                   active={active}
-                  meta={`command: ${preset.command}${autoInstall ? ` • auto-install: ${autoInstall}` : ""}`}
+                  meta={`${preset.command}${autoInstall ? ` • ${autoInstall}` : ""}`}
                   onToggle={() => {
                     if (active) {
                       removePresetServer(preset.id);
@@ -1490,94 +1476,57 @@ function AgentsPanel({
         </div>
 
         {settings.mcpServers.length ? (
-          <div className="space-y-5">
+          <div className="space-y-3">
             {settings.mcpServers.map((server, index) => (
-              <article key={server.id} className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-5 dark:border-[#f5f0e8] dark:bg-[#111111]">
-                <div className="flex items-start justify-between gap-4 border-b-4 border-[#1a1a1a] pb-4 dark:border-[#f5f0e8]">
-                  <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">
-                      Server {String(index + 1).padStart(2, "0")}
+              <article key={server.id} className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-3 dark:border-[#f5f0e8] dark:bg-[#111111]">
+                <div className="flex items-center justify-between gap-3 border-b-2 border-[#1a1a1a] pb-2 dark:border-[#f5f0e8]">
+                  <div className="min-w-0">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.3em] opacity-60">
+                      #{String(index + 1).padStart(2, "0")} {server.args.length} args · {countConfiguredEnv(server.env)} env · {server.enabledAgentIds.length} agents
                     </p>
-                    <h4 className="mt-1 font-headline text-2xl font-black uppercase leading-none">
+                    <h4 className="mt-0.5 font-headline text-lg font-black uppercase leading-none truncate">
                       {server.name || "Unnamed Server"}
                     </h4>
                   </div>
                   <button
                     type="button"
                     onClick={() => removeServer(server.id)}
-                    className="border-4 border-[#1a1a1a] bg-white px-3 py-2 font-headline text-sm font-black uppercase hover:bg-[#e63b2e] hover:text-white dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8]"
+                    className="shrink-0 border-4 border-[#1a1a1a] bg-white px-2 py-1 font-headline text-xs font-black uppercase hover:bg-[#e63b2e] hover:text-white dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8]"
                   >
                     Remove
                   </button>
                 </div>
 
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <FieldLabel>Server Name</FieldLabel>
-                      <TextInput value={server.name} onChange={(v) => updateServer(server.id, { name: v })} />
-                    </div>
-                    <div className="space-y-2">
-                      <FieldLabel>Command</FieldLabel>
-                      <TextInput value={server.command} onChange={(v) => updateServer(server.id, { command: v })} mono />
-                    </div>
-                    <div className="space-y-2">
-                      <FieldLabel>Arguments</FieldLabel>
-                      <TextInput
-                        value={formatArgs(server.args)}
-                        onChange={(v) => updateServer(server.id, { args: parseArgsInput(v) })}
-                        mono
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <FieldLabel>Environment Variables</FieldLabel>
-                      <TextArea
-                        value={formatEnv(server.env)}
-                        onChange={(v) => updateServer(server.id, { env: parseEnvInput(v) })}
-                        placeholder={"API_KEY=...\nDEBUG=true"}
-                        minRows={4}
-                      />
-                    </div>
-                    <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Summary</p>
-                      <div className="mt-3 grid grid-cols-3 gap-3">
-                        {[
-                          { label: "Args", value: server.args.length },
-                          { label: "Env", value: countConfiguredEnv(server.env) },
-                          { label: "Agents", value: server.enabledAgentIds.length },
-                        ].map(({ label, value }) => (
-                          <div key={label}>
-                            <p className="font-mono text-[10px] uppercase tracking-[0.25em] opacity-60">{label}</p>
-                            <p className="mt-1 font-headline text-2xl font-black leading-none">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_160px]">
+                  <TextInput value={server.name} onChange={(v) => updateServer(server.id, { name: v })} placeholder="Name" />
+                  <TextInput value={server.command} onChange={(v) => updateServer(server.id, { command: v })} mono placeholder="Command" />
+                  <TextInput value={formatArgs(server.args)} onChange={(v) => updateServer(server.id, { args: parseArgsInput(v) })} mono placeholder="Args" />
                 </div>
 
-                <div className="mt-4 space-y-2">
-                  <FieldLabel>Enabled Agents</FieldLabel>
-                  <div className="flex flex-wrap gap-3">
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <TextArea
+                    value={formatEnv(server.env)}
+                    onChange={(v) => updateServer(server.id, { env: parseEnvInput(v) })}
+                    placeholder="API_KEY=...\nDEBUG=true"
+                    minRows={2}
+                  />
+                  <div className="flex flex-wrap gap-1.5 content-start">
                     {agentCatalog.map((agent) => {
                       const enabled = server.enabledAgentIds.includes(agent.id);
                       return (
-                        <ToggleChip
+                        <button
                           key={`${server.id}-${agent.id}`}
-                          active={enabled}
-                          label={agent.name}
-                          meta={`${agent.command} • ${getAgentMcpInstallLabel(agent.id)}`}
-                          color={agent.color}
+                          type="button"
                           onClick={() => {
                             const enabledAgentIds = enabled
                               ? server.enabledAgentIds.filter((entry) => entry !== agent.id)
                               : [...server.enabledAgentIds, agent.id];
                             updateServer(server.id, { enabledAgentIds });
                           }}
-                        />
+                          className={`border-2 px-2 py-0.5 font-headline text-[10px] font-black uppercase ${enabled ? "border-[#1a1a1a] bg-[#1a1a1a] text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]" : "border-[#1a1a1a] bg-white text-[#1a1a1a] hover:bg-[#ffcc00] dark:border-[#f5f0e8] dark:bg-[#2a2a2a] dark:text-[#f5f0e8]"}`}
+                        >
+                          {agent.name}
+                        </button>
                       );
                     })}
                   </div>
@@ -1586,69 +1535,54 @@ function AgentsPanel({
             ))}
           </div>
         ) : (
-          <div className="border-4 border-dashed border-[#1a1a1a] bg-[#f5f0e8] p-8 text-center dark:border-[#f5f0e8] dark:bg-[#111111]">
-            <p className="font-headline text-2xl font-black uppercase">No MCP servers yet</p>
-            <p className="mx-auto mt-3 max-w-xl font-body text-sm leading-relaxed opacity-70">
+          <div className="border-4 border-dashed border-[#1a1a1a] bg-[#f5f0e8] p-4 text-center dark:border-[#f5f0e8] dark:bg-[#111111]">
+            <p className="font-headline text-lg font-black uppercase">No MCP servers yet</p>
+            <p className="mx-auto mt-1 max-w-xl font-body text-xs leading-relaxed opacity-70">
               Add a shared server here and Nexus will wire or inject it across every project for the agents you enable.
             </p>
           </div>
         )}
       </div>
 
-      <div className="space-y-4 border-4 border-[#1a1a1a] bg-white p-6 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      {/* Compact Caveman installer */}
+      <div className="space-y-3 border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Agent Add-On</p>
-            <p className="mt-1 font-headline text-2xl font-black uppercase leading-none">Caveman</p>
-            <p className="mt-2 max-w-3xl font-body text-sm leading-relaxed opacity-70">
-              Caveman is the terse-response / prompt-compression add-on. Use this installer instead of hunting through individual agent cards.
+            <p className="mt-0.5 font-headline text-lg font-black uppercase leading-none">Caveman</p>
+            <p className="mt-1 max-w-2xl font-body text-xs leading-relaxed opacity-70">
+              Terse-response / prompt-compression add-on. One-click for Claude, Gemini, Cline, Kiro. Codex is manual.
             </p>
           </div>
           <button
             type="button"
             onClick={() => void runCavemanInstall(selectedCavemanAgentId)}
             disabled={cavemanRunningAgentId === selectedCavemanAgentId || (!CAVEMAN_ONE_CLICK_AGENT_IDS.has(selectedCavemanAgentId) && selectedCavemanAgentId !== "codex")}
-            className="border-4 border-[#1a1a1a] bg-[#10B981] px-4 py-2 font-headline text-sm font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8]"
+            className="shrink-0 border-4 border-[#1a1a1a] bg-[#10B981] px-3 py-2 font-headline text-xs font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8]"
           >
             {cavemanRunningAgentId === selectedCavemanAgentId
               ? "Installing..."
               : cavemanInstalledAgentIds.has(selectedCavemanAgentId)
-                ? "Reinstall Caveman"
-                : "Install Caveman"}
+                ? "Reinstall"
+                : "Install"}
           </button>
         </div>
-
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
-          <div className="space-y-2">
-            <FieldLabel>Target Agent</FieldLabel>
-            <div className="flex flex-wrap gap-3">
-              {cavemanDropdownAgents.map((agent) => (
-                <button
-                  key={`caveman-${agent.id}`}
-                  type="button"
-                  onClick={() => setSelectedCavemanAgentId(agent.id)}
-                  className={`border-4 px-5 py-3 font-headline text-sm font-black uppercase ${
-                    selectedCavemanAgentId === agent.id
-                      ? "border-[#1a1a1a] bg-[#1a1a1a] text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]"
-                      : "border-[#1a1a1a] bg-white text-[#1a1a1a] hover:bg-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#2a2a2a] dark:text-[#f5f0e8]"
-                  }`}
-                >
-                  {agent.name}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-4 dark:border-[#f5f0e8] dark:bg-[#111111]">
-            <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Install Notes</p>
-            <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
-              {cavemanInstalledAgentIds.has(selectedCavemanAgentId)
-                ? "Nexus has a saved install marker for this agent. Reinstall only if the upstream tool says the add-on is missing."
-                : "Claude, Gemini, Cline, and Kiro have one-click install paths. Codex still uses the upstream local-plugin flow, so Nexus only documents that manual route."}
-            </p>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          {cavemanDropdownAgents.map((agent) => (
+            <button
+              key={`caveman-${agent.id}`}
+              type="button"
+              onClick={() => setSelectedCavemanAgentId(agent.id)}
+              className={`border-4 px-3 py-2 font-headline text-xs font-black uppercase ${
+                selectedCavemanAgentId === agent.id
+                  ? "border-[#1a1a1a] bg-[#1a1a1a] text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]"
+                  : "border-[#1a1a1a] bg-white text-[#1a1a1a] hover:bg-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#2a2a2a] dark:text-[#f5f0e8]"
+              }`}
+            >
+              {agent.name}
+            </button>
+          ))}
         </div>
-
         {cavemanStatus[selectedCavemanAgentId] ? (
           <ActionFeedback
             title="Caveman Result"
@@ -1658,124 +1592,77 @@ function AgentsPanel({
         ) : null}
       </div>
 
-      {/* Runtime sidebar + agent list */}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_260px]">
-        <div className="space-y-5">
+      {/* Runtime sidebar + compact agent list */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_200px]">
+        <div className="space-y-3">
           {agentCatalog.map((agent) => {
             const isCustom = settings.customAgents.some((e) => e.id === agent.id);
             const installed = isCustom ? true : installedStatus.get(agent.id) ?? false;
             const defaultArgs = settings.defaultAgentArgs[agent.id] ?? formatArgs(agent.args);
 
             return (
-              <article key={agent.id} className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-5 dark:border-[#f5f0e8] dark:bg-[#111111]">
-                <div className="flex items-start justify-between gap-4 border-b-4 border-[#1a1a1a] pb-4 dark:border-[#f5f0e8]">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="h-4 w-4 border border-[#1a1a1a] dark:border-[#f5f0e8]" style={{ backgroundColor: agent.color }} />
-                      <h3 className="font-headline text-2xl font-black uppercase leading-none">{agent.name}</h3>
-                      <span
-                        className={`border-2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.2em] ${installed ? "border-[#1a1a1a] bg-[#1a1a1a] text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]" : "border-[#1a1a1a] bg-white text-[#1a1a1a] dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8]"}`}
-                      >
-                        {isCustom ? "Custom" : installed ? "Installed" : "Missing"}
-                      </span>
-                    </div>
-                    <p className="mt-2 font-mono text-xs opacity-70">{agent.command}</p>
+              <article key={agent.id} className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-3 dark:border-[#f5f0e8] dark:bg-[#111111]">
+                <div className="flex items-center justify-between gap-3 border-b-2 border-[#1a1a1a] pb-2 dark:border-[#f5f0e8]">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="h-3 w-3 shrink-0 border border-[#1a1a1a] dark:border-[#f5f0e8]" style={{ backgroundColor: agent.color }} />
+                    <h3 className="font-headline text-base font-black uppercase leading-none truncate">{agent.name}</h3>
+                    <span
+                      className={`shrink-0 border-2 px-1.5 py-0 font-mono text-[9px] uppercase tracking-[0.2em] ${installed ? "border-[#1a1a1a] bg-[#1a1a1a] text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]" : "border-[#1a1a1a] bg-white text-[#1a1a1a] dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8]"}`}
+                    >
+                      {isCustom ? "Custom" : installed ? "Installed" : "Missing"}
+                    </span>
                   </div>
                   {isCustom ? (
                     <button
                       type="button"
                       onClick={() => removeCustomAgent(agent.id)}
-                      className="border-4 border-[#1a1a1a] bg-white px-3 py-2 font-headline text-sm font-black uppercase hover:bg-[#e63b2e] hover:text-white dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8]"
+                      className="shrink-0 border-4 border-[#1a1a1a] bg-white px-2 py-1 font-headline text-xs font-black uppercase hover:bg-[#e63b2e] hover:text-white dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8]"
                     >
                       Remove
                     </button>
                   ) : null}
                 </div>
 
-                <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
-                  <div className="space-y-2">
-                    <FieldLabel>Default Launch Args</FieldLabel>
-                    <TextArea
-                      value={defaultArgs}
-                      onChange={(value) =>
-                        onUpdateSettings({ defaultAgentArgs: { [agent.id]: value } })
-                      }
-                      placeholder="--flag value"
-                      minRows={3}
-                    />
-                  </div>
-
-                  <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Execution Summary</p>
-                    <dl className="mt-3 space-y-3">
-                      <div>
-                        <dt className="font-mono text-[10px] uppercase tracking-[0.25em] opacity-60">Command</dt>
-                        <dd className="mt-0.5 break-all font-headline text-base font-black uppercase">{agent.command}</dd>
-                      </div>
-                      <div>
-                        <dt className="font-mono text-[10px] uppercase tracking-[0.25em] opacity-60">Args Count</dt>
-                        <dd className="mt-0.5 font-headline text-base font-black uppercase">
-                          {parseArgsInput(defaultArgs).length}
-                        </dd>
-                      </div>
-                      {agent.cwdOverride ? (
-                        <div>
-                          <dt className="font-mono text-[10px] uppercase tracking-[0.25em] opacity-60">CWD Override</dt>
-                          <dd className="mt-0.5 break-all font-mono text-xs">{agent.cwdOverride}</dd>
-                        </div>
-                      ) : null}
-                    </dl>
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-4 border-t-4 border-[#1a1a1a] pt-4 dark:border-[#f5f0e8]">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Agent Add-On</p>
-                      <p className="mt-1 font-headline text-xl font-black uppercase leading-none">Caveman</p>
-                      <p className="mt-2 font-body text-sm leading-relaxed opacity-70">
-                        Install the upstream Caveman add-on for agents with a documented one-click flow. Nexus currently automates Claude Code, Gemini CLI, Cline, and Kiro.
-                      </p>
-                    </div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_140px]">
+                  <TextArea
+                    value={defaultArgs}
+                    onChange={(value) =>
+                      onUpdateSettings({ defaultAgentArgs: { [agent.id]: value } })
+                    }
+                    placeholder="--flag value"
+                    minRows={2}
+                  />
+                  <div className="space-y-1 text-xs">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.25em] opacity-60">Command</p>
+                    <p className="break-all font-headline text-sm font-black uppercase">{agent.command}</p>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.25em] opacity-60">Args</p>
+                    <p className="font-headline text-sm font-black">{parseArgsInput(defaultArgs).length}</p>
+                    {agent.cwdOverride ? (
+                      <>
+                        <p className="font-mono text-[9px] uppercase tracking-[0.25em] opacity-60">CWD</p>
+                        <p className="break-all font-mono text-[10px]">{agent.cwdOverride}</p>
+                      </>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => void runCavemanInstall(agent.id)}
                       disabled={cavemanRunningAgentId === agent.id || !CAVEMAN_ONE_CLICK_AGENT_IDS.has(agent.id)}
-                      className="border-4 border-[#1a1a1a] bg-[#10B981] px-4 py-2 font-headline text-sm font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8] dark:text-[#1a1a1a]"
+                      className="mt-1 w-full border-4 border-[#1a1a1a] bg-[#10B981] px-2 py-1 font-headline text-[10px] font-black uppercase text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#f5f0e8] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#f5f0e8]"
                     >
                       {cavemanRunningAgentId === agent.id
-                        ? "Installing..."
+                        ? "..."
                         : cavemanInstalledAgentIds.has(agent.id)
                           ? "Reinstall Caveman"
                           : "Install Caveman"}
                     </button>
+                    {cavemanStatus[agent.id] ? (
+                      <ActionFeedback
+                        title="Caveman"
+                        message={cavemanStatus[agent.id].message}
+                        tone={cavemanStatus[agent.id].tone}
+                      />
+                    ) : null}
                   </div>
-
-                  {CAVEMAN_ONE_CLICK_AGENT_IDS.has(agent.id) ? (
-                    <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Install Mode</p>
-                      <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
-                        Nexus runs the upstream install command for {agent.name}. You may still need to restart the agent tool or open a fresh session after install.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="border-4 border-[#1a1a1a] bg-white p-4 dark:border-[#f5f0e8] dark:bg-[#1a1a1a]">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Manual Setup</p>
-                      <p className="mt-2 font-body text-sm leading-relaxed opacity-80">
-                        {agent.id === "codex"
-                          ? "Codex Caveman still needs the upstream local-plugin flow inside a cloned Caveman repo. Nexus documents that path but does not automate it yet."
-                          : "Nexus does not have a verified upstream one-click Caveman install for this agent yet. Use the guide for the manual path."}
-                      </p>
-                    </div>
-                  )}
-
-                  {cavemanStatus[agent.id] ? (
-                    <ActionFeedback
-                      title="Caveman Result"
-                      message={cavemanStatus[agent.id].message}
-                      tone={cavemanStatus[agent.id].tone}
-                    />
-                  ) : null}
                 </div>
               </article>
             );
@@ -1783,22 +1670,19 @@ function AgentsPanel({
         </div>
 
         {/* Sidebar info */}
-        <aside className="space-y-4">
-          <div className="border-4 border-[#1a1a1a] bg-[#1a1a1a] p-5 text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]">
-            <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Runtime Info</p>
-            <p className="mt-3 font-headline text-3xl font-black uppercase leading-none">{formatRuntimeOsLabel(runtimeInfo.os)}</p>
-            <p className="mt-2 font-body text-sm leading-relaxed">
-              Current shell: <span className="font-mono">{formatRuntimeShellLabel(runtimeInfo.shell)}</span>
+        <aside className="space-y-3">
+          <div className="border-4 border-[#1a1a1a] bg-[#1a1a1a] p-3 text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]">
+            <p className="font-mono text-[9px] uppercase tracking-[0.3em] opacity-60">Runtime</p>
+            <p className="mt-1 font-headline text-xl font-black uppercase leading-none">{formatRuntimeOsLabel(runtimeInfo.os)}</p>
+            <p className="mt-1 font-body text-xs leading-relaxed">
+              Shell: <span className="font-mono">{formatRuntimeShellLabel(runtimeInfo.shell)}</span>
             </p>
           </div>
 
-          <div className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-5 dark:border-[#f5f0e8] dark:bg-[#111111] dark:text-[#f5f0e8]">
-            <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">MCP Strategy</p>
-            <p className="mt-3 font-headline text-base font-black uppercase leading-tight">
-              Configure servers once here. Nexus applies them everywhere.
-            </p>
-            <p className="mt-3 font-body text-sm leading-relaxed opacity-70">
-              The Agents &amp; MCP tab owns the shared server registry, runtime defaults, and agent compatibility hints.
+          <div className="border-4 border-[#1a1a1a] bg-[#f5f0e8] p-3 dark:border-[#f5f0e8] dark:bg-[#111111] dark:text-[#f5f0e8]">
+            <p className="font-mono text-[9px] uppercase tracking-[0.3em] opacity-60">MCP Strategy</p>
+            <p className="mt-1 font-headline text-sm font-black uppercase leading-tight">
+              Configure once. Apply everywhere.
             </p>
           </div>
         </aside>

@@ -10,6 +10,10 @@ interface TerminalTabBarProps {
   onCloseTab: (tabId: string) => void;
   onSplitHorizontal?: () => void;
   onSplitVertical?: () => void;
+  gitStatus?: { count: number; branch: string } | null;
+  onOpenSearch?: () => void;
+  onOpenGitDiff?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export function TerminalTabBar({
@@ -20,6 +24,10 @@ export function TerminalTabBar({
   onCloseTab,
   onSplitHorizontal,
   onSplitVertical,
+  gitStatus,
+  onOpenSearch,
+  onOpenGitDiff,
+  onOpenSettings,
 }: TerminalTabBarProps) {
   const kanbanActive = activeTabId === KANBAN_TAB_ID;
 
@@ -87,8 +95,55 @@ export function TerminalTabBar({
 
       <div className="flex-1 min-w-0" />
 
+      {/* Git branch */}
+      {gitStatus && (
+        <div className="flex items-center gap-1 px-2 border-l-2 border-[#333] shrink-0">
+          <span className="font-mono text-[10px] font-bold uppercase text-[#888] max-w-[100px] truncate" title={gitStatus.branch}>
+            {gitStatus.branch}
+          </span>
+        </div>
+      )}
+
+      {/* Action buttons merged from titlebar */}
+      <div className="flex items-center gap-1 px-3 border-l-2 border-[#333] shrink-0">
+        <button
+          className="material-symbols-outlined cursor-pointer hover:text-[#ffcc00] disabled:opacity-30 bg-transparent border-none text-[#888] text-lg px-1"
+          onClick={onOpenSearch}
+          disabled={!onOpenSearch}
+          title="Search logs"
+          type="button"
+        >
+          search
+        </button>
+        <div className="relative">
+          <button
+            className="material-symbols-outlined cursor-pointer hover:text-[#ffcc00] disabled:opacity-30 bg-transparent border-none text-[#888] text-lg px-1"
+            onClick={onOpenGitDiff}
+            disabled={!onOpenGitDiff}
+            title="Git diff"
+            type="button"
+          >
+            account_tree
+          </button>
+          {gitStatus != null && gitStatus.count > 0 && (
+            <span className="absolute -top-1 -right-1 bg-[#e63b2e] text-white text-[10px] font-black w-4 h-4 flex items-center justify-center border-2 border-[#1a1a1a] pointer-events-none rounded-none rounded-tr-sm">
+              {gitStatus.count > 9 ? "9+" : gitStatus.count}
+            </span>
+          )}
+        </div>
+        <button
+          className="material-symbols-outlined cursor-pointer hover:text-[#ffcc00] disabled:opacity-30 bg-transparent border-none text-[#888] text-lg px-1"
+          onClick={onOpenSettings}
+          disabled={!onOpenSettings}
+          title="Settings"
+          type="button"
+        >
+          settings
+        </button>
+      </div>
+
       {/* Split controls */}
-      <div className="flex items-center gap-1 px-2 border-l-2 border-[#333] shrink-0">
+      <div className="flex items-center gap-1 px-3 border-l-2 border-[#333] shrink-0">
         <button
           className="material-symbols-outlined cursor-pointer hover:text-[#ffcc00] disabled:opacity-30 bg-transparent border-none text-[#888] text-lg px-1"
           onClick={onSplitHorizontal}

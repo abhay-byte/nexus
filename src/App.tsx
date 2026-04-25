@@ -6,7 +6,7 @@ import { PaneGrid } from "./components/PaneGrid/PaneGrid";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { Titlebar } from "./components/Titlebar/Titlebar";
-import { ProjectTabs } from "./components/ProjectTabs/ProjectTabs";
+
 import { AddProjectDialog } from "./components/dialogs/AddProjectDialog";
 import { AddCustomAgentDialog } from "./components/dialogs/AddCustomAgentDialog";
 import { LogSearchDialog } from "./components/dialogs/LogSearchDialog";
@@ -423,18 +423,8 @@ function App() {
 
   return (
     <div className={`bg-background dark:bg-[#1a1a1a] text-on-surface dark:text-[#f5f0e8] font-body overflow-hidden h-screen flex flex-col ${settings.theme === "dark" ? "dark" : ""}`}>
-      <Titlebar
-        projects={projects}
-        activeProjectId={activeProjectId}
-        openProjectIds={openProjectIds}
-        projectAttention={projectAttention}
-        gitStatus={gitStatus}
-        onSelectProject={setActiveProject}
-        onOpenSettings={() => setSettingsOpen((open) => !open)}
-        onOpenSearch={() => setSearchOpen(true)}
-        onOpenGitDiff={toggleGitDiff}
-      />
-      <div className="flex flex-1 pt-16 overflow-hidden">
+      <Titlebar sidebarCollapsed={sidebarCollapsed} />
+      <div className={`flex flex-1 overflow-hidden ${sidebarCollapsed ? "pt-10" : "pt-16"}`}>
         <Sidebar
           projects={projects}
           activeProjectId={activeProjectId}
@@ -455,7 +445,7 @@ function App() {
           onResizeWidth={setSidebarWidth}
         />
 
-        <main className="flex-1 flex flex-col bg-[#e8e3da] dark:bg-[#1a1a1a] p-4 gap-4 overflow-hidden relative">
+        <main className="flex-1 flex flex-col bg-[#e8e3da] dark:bg-[#1a1a1a] p-2 gap-2 overflow-hidden relative">
           <section className="flex-1 min-h-0 relative">
             {loading && !bootstrapped ? (
               <div className="flex flex-col items-center justify-center h-full bg-[#f5f0e8] border-4 border-[#1a1a1a] neo-shadow">
@@ -484,6 +474,10 @@ function App() {
                         onCloseTab={(tabId) => closeTerminalTab(project.id, tabId)}
                         onSplitHorizontal={() => splitPane(project.id, "horizontal")}
                         onSplitVertical={() => splitPane(project.id, "vertical")}
+                        gitStatus={gitStatus}
+                        onOpenSearch={() => setSearchOpen(true)}
+                        onOpenGitDiff={toggleGitDiff}
+                        onOpenSettings={() => setSettingsOpen((open) => !open)}
                       />
 
                       <div
