@@ -21,6 +21,7 @@
     "fs:allow-read-file",
     "fs:allow-write",
     "fs:allow-create",
+    "fs:allow-remove",
     "fs:allow-exists",
     {
       "identifier": "fs:scope",

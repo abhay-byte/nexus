@@ -27,7 +27,12 @@ interface ProjectStoreState {
 }
 
 const syncProjectsToDisk = async (projects: Project[]) => {
-  await saveProjects(projects);
+  try {
+    await saveProjects(projects);
+  } catch (error) {
+    console.error("Failed to sync projects to disk:", error);
+    throw error;
+  }
 };
 
 const getMcpServersForProjectSync = (project: Project) => {

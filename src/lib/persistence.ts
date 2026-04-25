@@ -4,7 +4,6 @@ import {
   exists,
   mkdir,
   readTextFile,
-  remove,
 } from "@tauri-apps/plugin-fs";
 import { KNOWN_AGENTS } from "../constants/agents";
 import { getDefaultKeybindings } from "../constants/keybindings";
@@ -161,10 +160,6 @@ export async function loadProjects(): Promise<Project[]> {
 export async function saveProjects(projects: Project[]) {
   await ensureDataDir();
 
-  if (await exists(PROJECTS_FILE, { baseDir: BaseDirectory.AppConfig })) {
-    await remove(PROJECTS_FILE, { baseDir: BaseDirectory.AppConfig });
-  }
-
   const file = await create(PROJECTS_FILE, {
     baseDir: BaseDirectory.AppConfig,
   });
@@ -174,8 +169,14 @@ export async function saveProjects(projects: Project[]) {
     projects: projects.map(sanitizeProject),
   };
 
-  await file.write(new TextEncoder().encode(JSON.stringify(payload, null, 2)));
-  await file.close();
+  try {
+    await file.write(new TextEncoder().encode(JSON.stringify(payload, null, 2)));
+  } catch (error) {
+    console.error("Failed to write projects file:", error);
+    throw error;
+  } finally {
+    await file.close();
+  }
 }
 
 export async function loadSessions(): Promise<PersistedSessions | null> {
@@ -229,16 +230,18 @@ export async function loadSessions(): Promise<PersistedSessions | null> {
 export async function saveSessions(payload: PersistedSessions) {
   await ensureDataDir();
 
-  if (await exists(SESSIONS_FILE, { baseDir: BaseDirectory.AppConfig })) {
-    await remove(SESSIONS_FILE, { baseDir: BaseDirectory.AppConfig });
-  }
-
   const file = await create(SESSIONS_FILE, {
     baseDir: BaseDirectory.AppConfig,
   });
 
-  await file.write(new TextEncoder().encode(JSON.stringify(payload, null, 2)));
-  await file.close();
+  try {
+    await file.write(new TextEncoder().encode(JSON.stringify(payload, null, 2)));
+  } catch (error) {
+    console.error("Failed to write sessions file:", error);
+    throw error;
+  } finally {
+    await file.close();
+  }
 }
 
 export async function exportLogFile(filename: string, contents: string) {
