@@ -688,6 +688,7 @@ pub struct GitChangedFile {
     pub additions: i32,
     pub deletions: i32,
     pub hunks: Vec<GitDiffHunk>,
+    pub is_binary: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -699,15 +700,17 @@ pub struct GitDiffResult {
 }
 
 /// Parse `git diff --numstat` line: "<add>\t<del>\t<file>"
-fn parse_numstat(line: &str) -> Option<(String, i32, i32)> {
+/// Binary files show "-" in both columns.
+fn parse_numstat(line: &str) -> Option<(String, i32, i32, bool)> {
     let parts: Vec<&str> = line.splitn(3, '\t').collect();
     if parts.len() < 3 {
         return None;
     }
+    let is_binary = parts[0].trim() == "-" && parts[1].trim() == "-";
     let add = parts[0].trim().parse::<i32>().unwrap_or(0);
     let del = parts[1].trim().parse::<i32>().unwrap_or(0);
     let file = parts[2].trim().to_string();
-    Some((file, add, del))
+    Some((file, add, del, is_binary))
 }
 
 /// Parse unified diff output into hunks
@@ -800,12 +803,24 @@ fn get_file_diff(cwd: &str, path: &str) -> Vec<GitDiffHunk> {
     parse_unified_diff(&combined)
 }
 
+fn is_likely_binary(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    let extensions = [
+        ".exe", ".tar.gz", ".tgz", ".gz", ".zip", ".rar", ".7z",
+        ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".bmp", ".webp",
+        ".mp3", ".mp4", ".mov", ".avi", ".mkv", ".webm",
+        ".dll", ".so", ".dylib", ".bin", ".dat", ".db", ".sqlite", ".sqlite3",
+        ".wasm", ".class", ".jar", ".o", ".a", ".lib", ".obj", ".pdb",
+    ];
+    extensions.iter().any(|ext| lower.ends_with(ext))
+}
+
 fn collect_git_diff_metadata(
     cwd: &str,
 ) -> Result<
     (
         String,
-        std::collections::HashMap<String, (i32, i32)>,
+        std::collections::HashMap<String, (i32, i32, bool)>,
         std::collections::HashMap<String, String>,
     ),
     String,
@@ -835,24 +850,26 @@ fn collect_git_diff_metadata(
         .output()
         .map_err(|e| e.to_string())?;
 
-    let mut file_map: std::collections::HashMap<String, (i32, i32)> =
+    let mut file_map: std::collections::HashMap<String, (i32, i32, bool)> =
         std::collections::HashMap::new();
 
     let staged_text = String::from_utf8_lossy(&staged_numstat.stdout);
     for line in staged_text.lines() {
-        if let Some((path, add, del)) = parse_numstat(line) {
-            let entry = file_map.entry(path).or_insert((0, 0));
+        if let Some((path, add, del, is_binary)) = parse_numstat(line) {
+            let entry = file_map.entry(path).or_insert((0, 0, false));
             entry.0 += add;
             entry.1 += del;
+            entry.2 = entry.2 || is_binary;
         }
     }
 
     let unstaged_text = String::from_utf8_lossy(&unstaged_numstat.stdout);
     for line in unstaged_text.lines() {
-        if let Some((path, add, del)) = parse_numstat(line) {
-            let entry = file_map.entry(path).or_insert((0, 0));
+        if let Some((path, add, del, is_binary)) = parse_numstat(line) {
+            let entry = file_map.entry(path).or_insert((0, 0, false));
             entry.0 += add;
             entry.1 += del;
+            entry.2 = entry.2 || is_binary;
         }
     }
 
@@ -874,7 +891,9 @@ fn collect_git_diff_metadata(
         } else {
             file_part.to_string()
         };
-        let st = if xy.contains('A') {
+        let st = if xy == "??" {
+            "added"
+        } else if xy.contains('A') {
             "added"
         } else if xy.contains('D') {
             "deleted"
@@ -883,7 +902,11 @@ fn collect_git_diff_metadata(
         } else {
             "modified"
         };
-        status_map.insert(path, st.to_string());
+        status_map.insert(path.clone(), st.to_string());
+        // Ensure files that git diff --numstat skips (e.g. untracked) still appear
+        if !file_map.contains_key(&path) {
+            file_map.insert(path.clone(), (0, 0, is_likely_binary(&path)));
+        }
     }
 
     Ok((branch, file_map, status_map))
@@ -901,7 +924,7 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
     sorted_paths.sort();
 
     for path in sorted_paths {
-        let (add, del) = file_map[&path];
+        let (add, del, is_binary) = file_map[&path];
         let status = status_map.get(&path).cloned().unwrap_or_else(|| "modified".to_string());
         total_additions += add;
         total_deletions += del;
@@ -911,6 +934,7 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
             additions: add,
             deletions: del,
             hunks: Vec::new(),
+            is_binary,
         });
     }
 
@@ -925,7 +949,7 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
 #[tauri::command]
 pub fn git_diff_file(cwd: String, path: String) -> Result<GitChangedFile, String> {
     let (_, file_map, status_map) = collect_git_diff_metadata(&cwd)?;
-    let (additions, deletions) = file_map.get(&path).copied().unwrap_or((0, 0));
+    let (additions, deletions, is_binary) = file_map.get(&path).copied().unwrap_or((0, 0, false));
     let status = status_map
         .get(&path)
         .cloned()
@@ -937,6 +961,7 @@ pub fn git_diff_file(cwd: String, path: String) -> Result<GitChangedFile, String
         additions,
         deletions,
         hunks: get_file_diff(&cwd, &path),
+        is_binary,
     })
 }
 

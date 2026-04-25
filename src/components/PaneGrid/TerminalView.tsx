@@ -209,6 +209,23 @@ export function TerminalView({
     };
     container.addEventListener("wheel", wheelHandler, { passive: false });
 
+    const dragOverHandler = (event: DragEvent) => {
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "copy";
+      }
+    };
+    container.addEventListener("dragover", dragOverHandler);
+
+    const dropHandler = (event: DragEvent) => {
+      event.preventDefault();
+      const path = event.dataTransfer?.getData("text/plain");
+      if (path) {
+        void writeToSession(session.id, new TextEncoder().encode(path));
+      }
+    };
+    container.addEventListener("drop", dropHandler);
+
     return () => {
       fitAddonRef.current = null;
       termRef.current = null;
@@ -222,6 +239,8 @@ export function TerminalView({
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("mouseup", mouseUp);
       container.removeEventListener("wheel", wheelHandler);
+      container.removeEventListener("dragover", dragOverHandler);
+      container.removeEventListener("drop", dropHandler);
       term.dispose();
     };
   }, [

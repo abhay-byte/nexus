@@ -14,7 +14,9 @@ import { SettingsWorkspace } from "./components/settings/SettingsWorkspace";
 import { TerminalTabBar, KANBAN_TAB_ID } from "./components/TerminalTabBar/TerminalTabBar";
 import { KanbanBoard } from "./components/Kanban/KanbanBoard";
 import { GitDiffPanel } from "./components/GitDiffPanel/GitDiffPanel";
+import { ProjectDirectoryPanel } from "./components/ProjectDirectoryPanel/ProjectDirectoryPanel";
 import { KNOWN_AGENTS } from "./constants/agents";
+import { matchesKeybinding } from "./constants/keybindings";
 import { syncProjectMcpFiles } from "./lib/projectMcpSync";
 import { useProjectStore } from "./store/projectStore";
 import { useSessionStore } from "./store/sessionStore";
@@ -99,6 +101,10 @@ function App() {
   const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
   const closeGitDiff = useCallback(() => setGitDiffOpen(false), []);
   const toggleGitDiff = useCallback(() => setGitDiffOpen((open) => !open), []);
+
+  const [projectPanelCollapsed, setProjectPanelCollapsed] = useState(false);
+  const [projectPanelWidth, setProjectPanelWidth] = useState(240);
+  const toggleProjectPanel = useCallback(() => setProjectPanelCollapsed((v) => !v), []);
 
   const sidebarCollapsed = settings.sidebarCollapsed;
   const sidebarWidth = settings.sidebarWidth;
@@ -257,14 +263,45 @@ function App() {
     }
 
     const appWindow = getCurrentWindow();
+    const kb = settings.keybindings ?? {};
 
     const onKeyDown = (event: KeyboardEvent) => {
       const { activeProject: proj, activePaneIds: paneIds, openProjectIds: openIds, activeProjectId: activeProjId, layouts: lays } = shortcutStateRef.current;
 
-      // Ctrl+Q — quit app
-      if (event.ctrlKey && event.code === "KeyQ") {
+      // Application shortcuts
+      if (matchesKeybinding(event, kb.quit)) {
         event.preventDefault();
         void appWindow.close();
+        return;
+      }
+
+      if (matchesKeybinding(event, kb.toggleSidebar)) {
+        event.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      if (matchesKeybinding(event, kb.toggleProjectPanel)) {
+        event.preventDefault();
+        toggleProjectPanel();
+        return;
+      }
+
+      if (matchesKeybinding(event, kb.toggleGitDiff)) {
+        event.preventDefault();
+        toggleGitDiff();
+        return;
+      }
+
+      if (matchesKeybinding(event, kb.toggleSettings)) {
+        event.preventDefault();
+        setSettingsOpen((open) => !open);
+        return;
+      }
+
+      if (matchesKeybinding(event, kb.toggleSearch)) {
+        event.preventDefault();
+        setSearchOpen((open) => !open);
         return;
       }
 
@@ -272,14 +309,20 @@ function App() {
         return;
       }
 
-      // Ctrl+Shift+T — new pane (vertical split)
-      if (event.ctrlKey && event.shiftKey && event.code === "KeyT") {
+      // Terminal shortcuts
+      if (matchesKeybinding(event, kb.splitVertical)) {
         event.preventDefault();
         splitPane(proj.id, "vertical");
+        return;
       }
 
-      // Ctrl+Shift+W — kill focused session
-      if (event.ctrlKey && event.shiftKey && event.code === "KeyW") {
+      if (matchesKeybinding(event, kb.splitHorizontal)) {
+        event.preventDefault();
+        splitPane(proj.id, "horizontal");
+        return;
+      }
+
+      if (matchesKeybinding(event, kb.killFocusedSession)) {
         event.preventDefault();
         const activePaneId = paneIds[proj.id];
         if (!activePaneId) return;
@@ -287,23 +330,49 @@ function App() {
         if (pane?.sessionId) {
           void useSessionStore.getState().killSession(proj.id, pane.sessionId);
         }
+        return;
       }
 
-      // Ctrl+Tab / Ctrl+Shift+Tab — cycle project tabs
-      if (event.ctrlKey && event.code === "Tab") {
+      if (matchesKeybinding(event, kb.newTerminalTab)) {
+        event.preventDefault();
+        addTerminalTab(proj.id);
+        return;
+      }
+
+      if (matchesKeybinding(event, kb.closeTerminalTab)) {
+        event.preventDefault();
+        const tabs = useSessionStore.getState().terminalTabs[proj.id] ?? [];
+        const activeTabId = useSessionStore.getState().activeTabIds[proj.id];
+        if (tabs.length > 1 && activeTabId) {
+          closeTerminalTab(proj.id, activeTabId);
+        }
+        return;
+      }
+
+      // Navigation shortcuts
+      if (matchesKeybinding(event, kb.nextProjectTab)) {
         event.preventDefault();
         if (openIds.length < 2 || !activeProjId) return;
         const currentIndex = openIds.indexOf(activeProjId);
-        const delta = event.shiftKey ? -1 : 1;
-        const nextIndex = (currentIndex + delta + openIds.length) % openIds.length;
+        const nextIndex = (currentIndex + 1 + openIds.length) % openIds.length;
         setActiveProject(openIds[nextIndex]);
+        return;
+      }
+
+      if (matchesKeybinding(event, kb.prevProjectTab)) {
+        event.preventDefault();
+        if (openIds.length < 2 || !activeProjId) return;
+        const currentIndex = openIds.indexOf(activeProjId);
+        const nextIndex = (currentIndex - 1 + openIds.length) % openIds.length;
+        setActiveProject(openIds[nextIndex]);
+        return;
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootstrapped, sessionInitialized]); // Intentionally minimal — reads latest state via ref
+  }, [bootstrapped, sessionInitialized, settings.keybindings]); // Intentionally minimal state ref — keybindings change is OK to re-register
 
 
 
@@ -446,26 +515,34 @@ function App() {
         />
 
         <main className="flex-1 flex flex-col bg-[#e8e3da] dark:bg-[#1a1a1a] p-2 gap-2 overflow-hidden relative">
-          <section className="flex-1 min-h-0 relative">
-            {loading && !bootstrapped ? (
-              <div className="flex flex-col items-center justify-center h-full bg-[#f5f0e8] border-4 border-[#1a1a1a] neo-shadow">
-                <p className="font-['Space_Grotesk'] font-bold text-xl">Loading saved projects...</p>
-              </div>
-            ) : activeProject ? (
-              // Render ALL project grids so terminals stay alive when switching project tabs.
-              // Only the active project is visible; others are hidden but kept mounted.
-              <>
-                {projects.map((project) => {
-                  const tabs = terminalTabs[project.id] ?? [{ id: project.id, projectId: project.id, label: "Terminal 1", createdAt: 0 }];
-                  const activeTabId = activeTabIds[project.id] ?? tabs[0]?.id ?? project.id;
-                  const isVisible = project.id === activeProject.id;
-                  return (
-                    <div
-                      key={project.id}
-                      className="absolute inset-0 flex flex-col"
-                      style={{ display: isVisible ? "flex" : "none" }}
-                    >
-                      {/* Terminal tab bar — one row of tabs per project */}
+          <section className="flex-1 min-h-0 flex flex-row overflow-hidden relative">
+            <ProjectDirectoryPanel
+              project={activeProject}
+              collapsed={projectPanelCollapsed}
+              width={projectPanelWidth}
+              onToggleCollapse={toggleProjectPanel}
+              onResizeWidth={setProjectPanelWidth}
+            />
+            <div className="flex-1 min-h-0 relative">
+              {loading && !bootstrapped ? (
+                <div className="flex flex-col items-center justify-center h-full bg-[#f5f0e8] border-4 border-[#1a1a1a] neo-shadow">
+                  <p className="font-['Space_Grotesk'] font-bold text-xl">Loading saved projects...</p>
+                </div>
+              ) : activeProject ? (
+                // Render ALL project grids so terminals stay alive when switching project tabs.
+                // Only the active project is visible; others are hidden but kept mounted.
+                <>
+                  {projects.map((project) => {
+                    const tabs = terminalTabs[project.id] ?? [{ id: project.id, projectId: project.id, label: "Terminal 1", createdAt: 0 }];
+                    const activeTabId = activeTabIds[project.id] ?? tabs[0]?.id ?? project.id;
+                    const isVisible = project.id === activeProject.id;
+                    return (
+                      <div
+                        key={project.id}
+                        className="absolute inset-0 flex flex-col"
+                        style={{ display: isVisible ? "flex" : "none" }}
+                      >
+                        {/* Terminal tab bar — one row of tabs per project */}
                       <TerminalTabBar
                         tabs={tabs}
                         activeTabId={activeTabId}
@@ -478,68 +555,73 @@ function App() {
                         onOpenSearch={() => setSearchOpen(true)}
                         onOpenGitDiff={toggleGitDiff}
                         onOpenSettings={() => setSettingsOpen((open) => !open)}
+                        onToggleProjectPanel={toggleProjectPanel}
+                        agencyAgent={project.agencyAgent}
+                        onUpdateAgencyAgent={(patch) => void updateProject(project.id, { agencyAgent: { enabled: project.agencyAgent?.enabled ?? false, selectedAgentSlug: project.agencyAgent?.selectedAgentSlug ?? "agents-orchestrator", ...patch } })}
+                        onListAgencyAgents={handleListAgencyAgents}
+                        onSyncProjectAgencyAgent={(slug, enabled) => handleSyncProjectAgencyAgent(project.path, slug, enabled)}
                       />
 
-                      <div
-                        className="flex-1 min-h-0"
-                        style={{ display: activeTabId === KANBAN_TAB_ID ? "block" : "none" }}
-                      >
-                        <KanbanBoard projectId={project.id} projectName={project.name} />
-                      </div>
-
-                      {/* Keep every terminal tab mounted even while Kanban is visible.
-                         xterm's buffer lives in the mounted component tree, so unmounting
-                         the grid clears the visible terminal even though the PTY keeps running. */}
-                      {tabs.map((tab) => (
                         <div
-                          key={tab.id}
-                          className="flex-1 min-h-0 relative"
-                          style={{ display: tab.id === activeTabId ? "block" : "none" }}
+                          className="flex-1 min-h-0"
+                          style={{ display: activeTabId === KANBAN_TAB_ID ? "block" : "none" }}
                         >
-                          <PaneGrid
-                            project={project}
-                            layoutKey={tab.id}
-                            isTabActive={tab.id === activeTabId}
-                            onLaunchAgent={(agentId, paneId) => launchAgent(agentId, paneId, project)}
-                            onLaunchShell={(paneId) => launchShell(paneId, project)}
-                          />
+                          <KanbanBoard projectId={project.id} projectName={project.name} />
                         </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full bg-[#f5f0e8] dark:bg-[#1a1a1a] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] border-dashed p-8 text-center gap-6">
-                <div className="bg-white dark:bg-[#121212] border-2 border-[#1a1a1a] dark:border-[#f5f0e8] p-4 neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8]">
-                  <span className="material-symbols-outlined text-5xl text-[#1a1a1a] dark:text-[#f5f0e8]">smart_toy</span>
-                </div>
-                <div>
-                  <h3 className="font-['Space_Grotesk'] font-black text-2xl uppercase mb-2 text-[#1a1a1a] dark:text-[#f5f0e8]">Welcome to Nexus</h3>
-                  <p className="font-body text-sm text-[#4a4a4a] dark:text-[#a0a0a0]">Start with a project. Add a repo to begin.</p>
-                </div>
-                <button
-                  className="bg-[#ffcc00] dark:bg-[#ffcc00] text-[#1a1a1a] dark:text-[#1a1a1a] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] py-3 px-6 font-['Space_Grotesk'] font-black uppercase neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8] hover:translate-x-[2px] transition-all"
-                  onClick={openAddProject}
-                  type="button"
-                >
-                  + Add project
-                </button>
-              </div>
-            )}
 
-            {projectError && projectError !== dismissedProjectError ? (
-              <div className="absolute bottom-4 left-4 right-4 z-50 border-4 border-[#1a1a1a] bg-[#e63b2e] text-white p-4 font-bold neo-shadow flex items-center justify-between gap-4">
-                <span>{projectError}</span>
-                <button
-                  className="shrink-0 text-white hover:text-[#1a1a1a] hover:bg-white border-2 border-white hover:border-[#1a1a1a] w-7 h-7 flex items-center justify-center font-black text-sm transition-colors"
-                  onClick={() => setDismissedProjectError(projectError)}
-                  title="Dismiss"
-                  type="button"
-                >×</button>
-              </div>
-            ) : null}
-            {sessionError ? (
+                        {/* Keep every terminal tab mounted even while Kanban is visible.
+                           xterm's buffer lives in the mounted component tree, so unmounting
+                           the grid clears the visible terminal even though the PTY keeps running. */}
+                        {tabs.map((tab) => (
+                          <div
+                            key={tab.id}
+                            className="flex-1 min-h-0 relative"
+                            style={{ display: tab.id === activeTabId ? "block" : "none" }}
+                          >
+                            <PaneGrid
+                              project={project}
+                              layoutKey={tab.id}
+                              isTabActive={tab.id === activeTabId}
+                              onLaunchAgent={(agentId, paneId) => launchAgent(agentId, paneId, project)}
+                              onLaunchShell={(paneId) => launchShell(paneId, project)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full bg-[#f5f0e8] dark:bg-[#1a1a1a] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] border-dashed p-8 text-center gap-6">
+                  <div className="bg-white dark:bg-[#121212] border-2 border-[#1a1a1a] dark:border-[#f5f0e8] p-4 neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8]">
+                    <span className="material-symbols-outlined text-5xl text-[#1a1a1a] dark:text-[#f5f0e8]">smart_toy</span>
+                  </div>
+                  <div>
+                    <h3 className="font-['Space_Grotesk'] font-black text-2xl uppercase mb-2 text-[#1a1a1a] dark:text-[#f5f0e8]">Welcome to Nexus</h3>
+                    <p className="font-body text-sm text-[#4a4a4a] dark:text-[#a0a0a0]">Start with a project. Add a repo to begin.</p>
+                  </div>
+                  <button
+                    className="bg-[#ffcc00] dark:bg-[#ffcc00] text-[#1a1a1a] dark:text-[#1a1a1a] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] py-3 px-6 font-['Space_Grotesk'] font-black uppercase neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8] hover:translate-x-[2px] transition-all"
+                    onClick={openAddProject}
+                    type="button"
+                  >
+                    + Add project
+                  </button>
+                </div>
+              )}
+
+              {projectError && projectError !== dismissedProjectError ? (
+                <div className="absolute bottom-4 left-4 right-4 z-50 border-4 border-[#1a1a1a] bg-[#e63b2e] text-white p-4 font-bold neo-shadow flex items-center justify-between gap-4">
+                  <span>{projectError}</span>
+                  <button
+                    className="shrink-0 text-white hover:text-[#1a1a1a] hover:bg-white border-2 border-white hover:border-[#1a1a1a] w-7 h-7 flex items-center justify-center font-black text-sm transition-colors"
+                    onClick={() => setDismissedProjectError(projectError)}
+                    title="Dismiss"
+                    type="button"
+                  >×</button>
+                </div>
+              ) : null}
+              {sessionError ? (
               <div className="absolute bottom-20 left-4 right-4 z-50 border-4 border-[#1a1a1a] bg-[#e63b2e] text-white p-4 font-bold neo-shadow flex items-center justify-between gap-4">
                 <span>{sessionError}</span>
                 <button
@@ -550,6 +632,7 @@ function App() {
                 >×</button>
               </div>
             ) : null}
+            </div>
           </section>
         </main>
       </div>

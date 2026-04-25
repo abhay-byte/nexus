@@ -38,3 +38,10 @@ WKWebView*
 stitch/
 node-compile-cache/
 node-compile-cache
+
+# Release artifacts
+*.tar.gz
+*.exe
+nexus-linux-x86_64
+dist.old/
+docs/release_notes/*.html

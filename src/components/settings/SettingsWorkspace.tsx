@@ -10,6 +10,11 @@ import {
 } from "../../constants/mcpPresets";
 import { getImageDataUrl } from "../../lib/imageDataUrl";
 import { getAgentMcpInstallLabel } from "../../lib/projectMcpSync";
+import {
+  KEYBINDING_ACTIONS,
+  matchesKeybinding,
+  type KeybindingAction,
+} from "../../constants/keybindings";
 import type {
   AgentId,
   AppSettings,
@@ -20,7 +25,7 @@ import type {
   RuntimeInfo,
 } from "../../types";
 
-type SettingsSection = "appearance" | "terminal" | "session" | "projects" | "agents";
+type SettingsSection = "appearance" | "terminal" | "session" | "projects" | "agents" | "keybindings";
 
 interface AgencyAgentOption {
   slug: string;
@@ -62,6 +67,7 @@ const SETTINGS_SECTIONS: Array<{
   { id: "session", label: "Session", eyebrow: "Behaviour", accent: "#1a1a1a" },
   { id: "projects", label: "Projects", eyebrow: "Workspace", accent: "#ffcc00" },
   { id: "agents", label: "Agents & MCP", eyebrow: "Runtime", accent: "#10B981" },
+  { id: "keybindings", label: "Keybindings", eyebrow: "Shortcuts", accent: "#9333ea" },
 ];
 
 const SPEC_KIT_SUPPORTED_AGENT_IDS = new Set(["codex", "claude-code", "gemini-cli"]);
@@ -1691,6 +1697,177 @@ function AgentsPanel({
   );
 }
 
+// ─── Keybindings Section ─────────────────────────────────────────────────────
+
+function KeybindingsSection({
+  settings,
+  onUpdateSettings,
+}: {
+  settings: AppSettings;
+  onUpdateSettings: (patch: Partial<AppSettings>) => void;
+}) {
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const keybindings = settings.keybindings ?? {};
+
+  const setBinding = (actionId: string, binding: string | null) => {
+    onUpdateSettings({
+      keybindings: {
+        ...keybindings,
+        [actionId]: binding,
+      },
+    });
+  };
+
+  const resetAll = () => {
+    onUpdateSettings({
+      keybindings: {},
+    });
+  };
+
+  useEffect(() => {
+    if (!recordingId) return;
+
+    const handler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === "Escape") {
+        setRecordingId(null);
+        return;
+      }
+
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push("Ctrl");
+      if (e.altKey) parts.push("Alt");
+      if (e.shiftKey) parts.push("Shift");
+      if (e.metaKey) parts.push("Meta");
+
+      let key = e.code;
+      if (key.startsWith("Key")) key = key.slice(3);
+      else if (key.startsWith("Digit")) key = key.slice(5);
+      else if (key.startsWith("Numpad")) key = key;
+      else if (key === "Minus") key = "Minus";
+      else if (key === "Equal") key = "Equal";
+      else if (key === "BracketLeft") key = "BracketLeft";
+      else if (key === "BracketRight") key = "BracketRight";
+      else if (key === "Semicolon") key = "Semicolon";
+      else if (key === "Quote") key = "Quote";
+      else if (key === "Backquote") key = "Backquote";
+      else if (key === "Backslash") key = "Backslash";
+      else if (key === "Comma") key = "Comma";
+      else if (key === "Period") key = "Period";
+      else if (key === "Slash") key = "Slash";
+      else if (key === "Tab") key = "Tab";
+      else if (key === "Space") key = "Space";
+      else if (key === "Enter") key = "Enter";
+      else if (key === "Escape") key = "Escape";
+      else if (key === "Backspace") key = "Backspace";
+      else if (key === "Delete") key = "Delete";
+      else if (key === "ArrowUp") key = "ArrowUp";
+      else if (key === "ArrowDown") key = "ArrowDown";
+      else if (key === "ArrowLeft") key = "ArrowLeft";
+      else if (key === "ArrowRight") key = "ArrowRight";
+      else if (key === "PageUp") key = "PageUp";
+      else if (key === "PageDown") key = "PageDown";
+      else if (key === "Home") key = "Home";
+      else if (key === "End") key = "End";
+      else if (key === "Insert") key = "Insert";
+      else if (key === "F1") key = "F1";
+      else if (key === "F2") key = "F2";
+      else if (key === "F3") key = "F3";
+      else if (key === "F4") key = "F4";
+      else if (key === "F5") key = "F5";
+      else if (key === "F6") key = "F6";
+      else if (key === "F7") key = "F7";
+      else if (key === "F8") key = "F8";
+      else if (key === "F9") key = "F9";
+      else if (key === "F10") key = "F10";
+      else if (key === "F11") key = "F11";
+      else if (key === "F12") key = "F12";
+
+      parts.push(key);
+      const binding = parts.join("+");
+      setBinding(recordingId, binding);
+      setRecordingId(null);
+    };
+
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [recordingId]);
+
+  const byCategory = useMemo(() => {
+    const map = new Map<string, KeybindingAction[]>();
+    for (const action of KEYBINDING_ACTIONS) {
+      const list = map.get(action.category) ?? [];
+      list.push(action);
+      map.set(action.category, list);
+    }
+    return Array.from(map.entries());
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-headline text-3xl font-black uppercase">Keybindings</h2>
+          <p className="mt-1 font-body text-sm opacity-70">
+            Customize keyboard shortcuts. Click a binding to record a new one. Press Escape to cancel.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={resetAll}
+          className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] px-4 py-2 font-headline text-sm font-black uppercase hover:bg-[#ffcc00] transition-none dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]"
+        >
+          Reset All
+        </button>
+      </div>
+
+      {byCategory.map(([category, actions]) => (
+        <div key={category} className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-white dark:bg-[#1a1a1a]">
+          <div className="px-4 py-2 border-b-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#f5f0e8] dark:bg-[#111]">
+            <span className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60 dark:text-[#f5f0e8]">{category}</span>
+          </div>
+          <div className="divide-y-2 divide-[#1a1a1a] dark:divide-[#f5f0e8]">
+            {actions.map((action) => {
+              const current = keybindings[action.id] ?? action.defaultBinding;
+              const isRecording = recordingId === action.id;
+              return (
+                <div key={action.id} className="flex items-center justify-between px-4 py-3">
+                  <span className="font-mono text-xs dark:text-[#f5f0e8]">{action.label}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRecordingId(action.id)}
+                      className={`min-w-[120px] border-2 px-3 py-1 font-mono text-xs font-bold text-center transition-none ${
+                        isRecording
+                          ? "border-[#ffcc00] bg-[#ffcc00] text-[#1a1a1a] animate-pulse"
+                          : "border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#f5f0e8] dark:bg-[#111] dark:text-[#f5f0e8] hover:bg-[#ffcc00] hover:text-[#1a1a1a]"
+                      }`}
+                    >
+                      {isRecording ? "Recording…" : current ?? "—"}
+                    </button>
+                    {current && (
+                      <button
+                        type="button"
+                        onClick={() => setBinding(action.id, null)}
+                        className="material-symbols-outlined text-[#e63b2e] hover:text-[#ff8888] bg-transparent border-none cursor-pointer text-sm"
+                        title="Clear binding"
+                      >
+                        close
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Root component ──────────────────────────────────────────────────────────
 
 export function SettingsWorkspace({
@@ -1825,6 +2002,9 @@ export function SettingsWorkspace({
                   onOpenAddCustomAgent={onOpenAddCustomAgent}
                   onInstallCaveman={onInstallCaveman}
                 />
+              )}
+              {section === "keybindings" && (
+                <KeybindingsSection settings={settings} onUpdateSettings={onUpdateSettings} />
               )}
             </div>
           </main>

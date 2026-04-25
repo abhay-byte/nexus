@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { readFile } from "@tauri-apps/plugin-fs";
 import type { Project } from "../../types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -22,6 +23,7 @@ interface GitChangedFile {
   additions: number;
   deletions: number;
   hunks: GitDiffHunk[];
+  is_binary: boolean;
 }
 
 interface GitDiffResult {
@@ -43,6 +45,96 @@ interface GitDiffPanelProps {
   onClose: () => void;
 }
 
+// ── File type detection ──────────────────────────────────────────────────────
+
+type FileCategory =
+  | "image"
+  | "gif"
+  | "video"
+  | "audio"
+  | "archive"
+  | "executable"
+  | "directory"
+  | "pdf"
+  | "code"
+  | "data"
+  | "font"
+  | "binary"
+  | "text";
+
+interface FileTypeInfo {
+  category: FileCategory;
+  icon: string;
+  label: string;
+}
+
+function getFileTypeInfo(path: string): FileTypeInfo {
+  const lower = path.toLowerCase().replace(/\\/g, "/");
+  const name = lower.split("/").pop() ?? lower;
+
+  // Directory
+  if (path.endsWith("/") || (!name.includes(".") && !path.includes("."))) {
+    return { category: "directory", icon: "folder", label: "Directory" };
+  }
+
+  // Image
+  if (/\.(png|jpg|jpeg|bmp|webp|svg|ico|tiff?)$/i.test(name)) {
+    return { category: "image", icon: "image", label: "Image" };
+  }
+
+  // GIF
+  if (/\.gif$/i.test(name)) {
+    return { category: "gif", icon: "gif", label: "GIF" };
+  }
+
+  // Video
+  if (/\.(mp4|mov|avi|mkv|webm|flv|wmv|m4v|mpeg?)$/i.test(name)) {
+    return { category: "video", icon: "movie", label: "Video" };
+  }
+
+  // Audio
+  if (/\.(mp3|wav|flac|aac|ogg|m4a|wma)$/i.test(name)) {
+    return { category: "audio", icon: "music_note", label: "Audio" };
+  }
+
+  // Archive
+  if (/\.(zip|rar|7z|tar\.gz|tgz|tar\.bz2|tbz2|tar\.xz|txz|tar|gz|bz2|xz|lz4|lzma|br|deb|rpm|dmg|pkg|msi|jar|war|ear)$/i.test(name)) {
+    return { category: "archive", icon: "folder_zip", label: "Archive" };
+  }
+
+  // PDF
+  if (/\.pdf$/i.test(name)) {
+    return { category: "pdf", icon: "picture_as_pdf", label: "PDF" };
+  }
+
+  // Executable
+  if (/\.(exe|dll|so|dylib|bin|app|bat|cmd|sh|bash|zsh|fish|ps1)$/i.test(name)) {
+    return { category: "executable", icon: "terminal", label: "Executable" };
+  }
+
+  // Code / text source
+  if (/\.(rs|ts|tsx|js|jsx|py|go|java|c|cpp|h|hpp|cs|rb|php|swift|kt|scala|rs|lua|vim|elixir|ex|exs|erl|hrl|clj|cljs|cljs|groovy|gradle|dart|flutter|sql|graphql|yaml|yml|toml|ini|cfg|conf|json|xml|html|htm|css|scss|sass|less|md|markdown|rst|txt|log|csv|tsv|diff|patch)$/i.test(name)) {
+    return { category: "code", icon: "code", label: "Code" };
+  }
+
+  // Font
+  if (/\.(ttf|otf|woff2?|eot)$/i.test(name)) {
+    return { category: "font", icon: "font_download", label: "Font" };
+  }
+
+  // Data
+  if (/\.(db|sqlite|sqlite3|mdb|accdb|fdb|gdb|odb|csv|tsv|json|xml|parquet|orc|avro|protobuf|proto|msgpack)$/i.test(name)) {
+    return { category: "data", icon: "database", label: "Data" };
+  }
+
+  // Fallback binary / text
+  return { category: "binary", icon: "memory", label: "Binary" };
+}
+
+function isPreviewable(category: FileCategory): boolean {
+  return category === "image" || category === "gif";
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function statusLabel(status: string) {
@@ -55,7 +147,7 @@ function statusLabel(status: string) {
 }
 
 function basename(path: string) {
-  return path.split("/").pop() ?? path;
+  return path.replace(/\\/g, "/").split("/").pop() ?? path;
 }
 
 // ── Branch dropdown ──────────────────────────────────────────────────────────
@@ -142,15 +234,188 @@ function BranchDropdown({
   );
 }
 
-// ── Diff Table ───────────────────────────────────────────────────────────────
+// ── File Preview ─────────────────────────────────────────────────────────────
 
-const DiffView = memo(function DiffView({ file }: { file: GitChangedFile }) {
-  if (file.hunks.length === 0) {
+const FilePreview = memo(function FilePreview({
+  file,
+  projectPath,
+}: {
+  file: GitChangedFile;
+  projectPath: string;
+}) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const typeInfo = useMemo(() => getFileTypeInfo(file.path), [file.path]);
+
+  useEffect(() => {
+    if (!isPreviewable(typeInfo.category)) return;
+    if (file.status === "deleted") return;
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    const load = async () => {
+      try {
+        const root = projectPath.replace(/[\\/]+$/, "");
+        const fullPath = `${root}/${file.path}`;
+        const bytes = await readFile(fullPath);
+        if (cancelled) return;
+        const blob = new Blob([bytes]);
+        const url = URL.createObjectURL(blob);
+        if (!cancelled) {
+          setPreviewUrl(url);
+        }
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [file.path, file.status, projectPath, typeInfo.category]);
+
+  // Deleted file
+  if (file.status === "deleted") {
     return (
-      <div className="flex-1 flex items-center justify-center font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
-        {file.status === "added" ? "New file (binary or empty)" : file.status === "deleted" ? "File deleted" : "No diff available"}
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+        <span className="material-symbols-outlined text-5xl">delete_forever</span>
+        <span>File deleted</span>
       </div>
     );
+  }
+
+  // Directory
+  if (typeInfo.category === "directory") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+        <span className="material-symbols-outlined text-5xl">folder</span>
+        <span>Directory</span>
+      </div>
+    );
+  }
+
+  // Image / GIF preview
+  if (isPreviewable(typeInfo.category)) {
+    if (loading) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3">
+          <span className="material-symbols-outlined text-4xl animate-spin text-[#1a1a1a] dark:text-[#f5f0e8]">sync</span>
+          <p className="font-mono text-xs uppercase tracking-wide dark:text-[#f5f0e8]">Loading preview…</p>
+        </div>
+      );
+    }
+
+    if (error || !previewUrl) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+          <span className="material-symbols-outlined text-5xl">{typeInfo.icon}</span>
+          <span>{typeInfo.label} — preview unavailable</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex-1 flex items-center justify-center p-4 overflow-auto">
+        {typeInfo.category === "gif" ? (
+          <img src={previewUrl} alt={file.path} className="max-w-full max-h-full object-contain border-4 border-[#1a1a1a] dark:border-[#f5f0e8]" />
+        ) : (
+          <img src={previewUrl} alt={file.path} className="max-w-full max-h-full object-contain border-4 border-[#1a1a1a] dark:border-[#f5f0e8]" />
+        )}
+      </div>
+    );
+  }
+
+  // Video
+  if (typeInfo.category === "video") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+        <span className="material-symbols-outlined text-5xl">{typeInfo.icon}</span>
+        <span>{typeInfo.label}</span>
+      </div>
+    );
+  }
+
+  // Audio
+  if (typeInfo.category === "audio") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+        <span className="material-symbols-outlined text-5xl">{typeInfo.icon}</span>
+        <span>{typeInfo.label}</span>
+      </div>
+    );
+  }
+
+  // Archive
+  if (typeInfo.category === "archive") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+        <span className="material-symbols-outlined text-5xl">{typeInfo.icon}</span>
+        <span>{typeInfo.label}</span>
+      </div>
+    );
+  }
+
+  // PDF
+  if (typeInfo.category === "pdf") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+        <span className="material-symbols-outlined text-5xl">{typeInfo.icon}</span>
+        <span>{typeInfo.label}</span>
+      </div>
+    );
+  }
+
+  // Executable
+  if (typeInfo.category === "executable") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+        <span className="material-symbols-outlined text-5xl">{typeInfo.icon}</span>
+        <span>{typeInfo.label}</span>
+      </div>
+    );
+  }
+
+  // Code / text (no hunks = empty)
+  if (typeInfo.category === "code") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+        <span className="material-symbols-outlined text-5xl">{typeInfo.icon}</span>
+        <span>{file.status === "added" ? "New file (empty)" : "No diff available"}</span>
+      </div>
+    );
+  }
+
+  // Generic binary
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-3 font-mono text-xs opacity-50 dark:text-[#f5f0e8]">
+      <span className="material-symbols-outlined text-5xl">{typeInfo.icon}</span>
+      <span>{typeInfo.label}</span>
+    </div>
+  );
+});
+
+// ── Diff Table ───────────────────────────────────────────────────────────────
+
+const DiffView = memo(function DiffView({
+  file,
+  projectPath,
+}: {
+  file: GitChangedFile;
+  projectPath: string;
+}) {
+  if (file.hunks.length === 0 || file.is_binary) {
+    return <FilePreview file={file} projectPath={projectPath} />;
   }
 
   return (
@@ -212,6 +477,49 @@ const DiffView = memo(function DiffView({ file }: { file: GitChangedFile }) {
     </div>
   );
 });
+
+// ── File list item ───────────────────────────────────────────────────────────
+
+function FileListItem({
+  file,
+  active,
+  onClick,
+}: {
+  file: GitChangedFile;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const { label, bg } = statusLabel(file.status);
+  const typeInfo = useMemo(() => getFileTypeInfo(file.path), [file.path]);
+
+  return (
+    <div
+      onClick={onClick}
+      className={`px-3 py-3 border-b-2 border-[#1a1a1a] dark:border-[#f5f0e8] flex justify-between items-start cursor-pointer transition-none ${
+        active
+          ? "bg-[#ffcc00] text-[#1a1a1a]"
+          : "hover:bg-white dark:hover:bg-[#1a1a1a] dark:text-[#f5f0e8]"
+      }`}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[13px] opacity-60 shrink-0" style={{ fontSize: "13px" }}>
+            {typeInfo.icon}
+          </span>
+          <div className="font-mono text-[11px] font-bold truncate">{basename(file.path)}</div>
+        </div>
+        <div className="font-mono text-[9px] opacity-50 truncate mt-0.5">{file.path}</div>
+        <div className="flex gap-1 mt-1 font-mono text-[9px]">
+          <span className="text-[#00aa55]">+{file.additions}</span>
+          <span className="text-[#e63b2e]">-{file.deletions}</span>
+        </div>
+      </div>
+      <span className={`${bg} text-white text-[8px] font-black px-1 py-0.5 ml-1 shrink-0`}>
+        {label}
+      </span>
+    </div>
+  );
+}
 
 // ── Main Panel ───────────────────────────────────────────────────────────────
 
@@ -420,33 +728,14 @@ export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose 
                 CHANGED_FILES
               </div>
               <div className="flex-1 overflow-y-auto">
-                {diffResult.files.map((file) => {
-                  const { label, bg } = statusLabel(file.status);
-                  const active = selectedFile?.path === file.path;
-                  return (
-                    <div
-                      key={file.path}
-                      onClick={() => setSelectedFilePath(file.path)}
-                      className={`px-3 py-3 border-b-2 border-[#1a1a1a] dark:border-[#f5f0e8] flex justify-between items-start cursor-pointer transition-none ${
-                        active
-                          ? "bg-[#ffcc00] text-[#1a1a1a]"
-                          : "hover:bg-white dark:hover:bg-[#1a1a1a] dark:text-[#f5f0e8]"
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="font-mono text-[11px] font-bold truncate">{basename(file.path)}</div>
-                        <div className="font-mono text-[9px] opacity-50 truncate mt-0.5">{file.path}</div>
-                        <div className="flex gap-1 mt-1 font-mono text-[9px]">
-                          <span className="text-[#00aa55]">+{file.additions}</span>
-                          <span className="text-[#e63b2e]">-{file.deletions}</span>
-                        </div>
-                      </div>
-                      <span className={`${bg} text-white text-[8px] font-black px-1 py-0.5 ml-1 shrink-0`}>
-                        {label}
-                      </span>
-                    </div>
-                  );
-                })}
+                {diffResult.files.map((file) => (
+                  <FileListItem
+                    key={file.path}
+                    file={file}
+                    active={selectedFile?.path === file.path}
+                    onClick={() => setSelectedFilePath(file.path)}
+                  />
+                ))}
               </div>
             </div>
 
@@ -482,7 +771,7 @@ export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose 
                       </p>
                     </div>
                   ) : (
-                    <DiffView file={selectedFile} />
+                    <DiffView file={selectedFile} projectPath={project?.path ?? ""} />
                   )}
                 </>
               ) : (

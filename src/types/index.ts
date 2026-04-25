@@ -50,6 +50,8 @@ export interface Project {
   createdAt: number;
 }
 
+export type KeybindingMap = Record<string, string | null>;
+
 export interface AppSettings {
   theme: "dark" | "light";
   fontFamily: string;
@@ -65,6 +67,7 @@ export interface AppSettings {
   cavemanInstalledAgentIds: AgentId[];
   sidebarCollapsed: boolean;
   sidebarWidth: number;
+  keybindings: KeybindingMap;
 }
 
 export interface PersistedProjects {

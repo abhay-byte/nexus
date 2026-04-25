@@ -7,6 +7,7 @@ import {
   remove,
 } from "@tauri-apps/plugin-fs";
 import { KNOWN_AGENTS } from "../constants/agents";
+import { getDefaultKeybindings } from "../constants/keybindings";
 import type {
   AgentId,
   AppSettings,
@@ -39,6 +40,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cavemanInstalledAgentIds: [],
   sidebarCollapsed: false,
   sidebarWidth: 256,
+  keybindings: getDefaultKeybindings(),
 };
 
 function sanitizeMcpServers(settings: Pick<AppSettings, "mcpServers">) {
@@ -114,18 +116,22 @@ async function syncSpecKitState(project: Project): Promise<Project> {
     return sanitized;
   }
 
-  const hasSpecifyDir = await exists(`${sanitized.path.replace(/[\\/]+$/, "")}/.specify`);
-  if (!hasSpecifyDir) {
+  try {
+    const hasSpecifyDir = await exists(`${sanitized.path.replace(/[\\/]+$/, "")}/.specify`);
+    if (!hasSpecifyDir) {
+      return sanitized;
+    }
+
+    return {
+      ...sanitized,
+      specKit: {
+        enabled: true,
+        agentId: sanitized.specKit?.agentId ?? null,
+      },
+    };
+  } catch {
     return sanitized;
   }
-
-  return {
-    ...sanitized,
-    specKit: {
-      enabled: true,
-      agentId: sanitized.specKit?.agentId ?? null,
-    },
-  };
 }
 
 export async function loadProjects(): Promise<Project[]> {
@@ -212,6 +218,10 @@ export async function loadSessions(): Promise<PersistedSessions | null> {
       cavemanInstalledAgentIds: (parsed.settings?.cavemanInstalledAgentIds ?? []).filter(
         (agentId): agentId is AgentId => typeof agentId === "string" && !removedBuiltInAgentIds.has(agentId),
       ),
+      keybindings: {
+        ...DEFAULT_SETTINGS.keybindings,
+        ...parsed.settings?.keybindings,
+      },
     },
   };
 }
