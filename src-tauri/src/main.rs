@@ -1,4 +1,7 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Hide the console window on Windows in all builds (dev + release).
+// On Windows a GUI app should never show a terminal. Developers who need
+// stdout can launch the binary from an existing terminal.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod pty;
 mod state;

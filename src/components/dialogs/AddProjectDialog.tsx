@@ -46,6 +46,94 @@ const PROJECT_CATEGORIES: { value: ProjectCategory; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+function AgencyDropdown({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string; category?: string }>;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+  const displayLabel = selected?.label ?? placeholder ?? "Select...";
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full border-4 border-[#1a1a1a] bg-white px-4 py-3 font-mono text-sm text-[#1a1a1a] outline-none hover:bg-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:bg-[#2a2a2a] flex items-center justify-between gap-2"
+      >
+        <span className="flex items-center gap-2 truncate">
+          {selected?.category ? (
+            <span className="shrink-0 border-2 border-[#1a1a1a] bg-[#ffcc00] px-1.5 py-0.5 font-headline text-[9px] font-black uppercase tracking-wider text-[#1a1a1a] dark:border-[#f5f0e8]">
+              {selected.category}
+            </span>
+          ) : null}
+          <span className="truncate">{displayLabel}</span>
+        </span>
+        <span
+          className="material-symbols-outlined shrink-0 text-base transition-transform duration-150"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+        >
+          expand_more
+        </span>
+      </button>
+
+      {open ? (
+        <div className="absolute top-full left-0 right-0 z-[200] mt-1 max-h-[260px] overflow-y-auto border-4 border-[#1a1a1a] bg-white shadow-[6px_6px_0px_0px_#1a1a1a] dark:border-[#f5f0e8] dark:bg-[#1a1a1a] dark:shadow-[6px_6px_0px_0px_#f5f0e8]">
+          {options.length === 0 ? (
+            <div className="px-4 py-3 font-mono text-xs opacity-50">No options</div>
+          ) : (
+            options.map((option) => {
+              const isSelected = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => { onChange(option.value); setOpen(false); }}
+                  className={`w-full px-4 py-3 text-left font-mono text-sm flex items-center justify-between gap-2 border-b-2 border-[#1a1a1a]/10 dark:border-[#f5f0e8]/10 last:border-0 ${
+                    isSelected
+                      ? "bg-[#ffcc00] text-[#1a1a1a] dark:bg-[#ffcc00] dark:text-[#1a1a1a]"
+                      : "text-[#1a1a1a] hover:bg-[#f5f0e8] dark:text-[#f5f0e8] dark:hover:bg-[#2a2a2a]"
+                  }`}
+                >
+                  <span className="truncate">{option.label}</span>
+                  {option.category ? (
+                    <span className="shrink-0 border-2 border-[#1a1a1a]/30 px-1.5 py-0.5 font-headline text-[9px] font-black uppercase dark:border-[#f5f0e8]/30">
+                      {option.category}
+                    </span>
+                  ) : null}
+                  {isSelected ? (
+                    <span className="material-symbols-outlined shrink-0 text-sm text-[#1a1a1a]">check</span>
+                  ) : null}
+                </button>
+              );
+            })
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AddProjectDialog({
   onClose,
   onSubmit,
@@ -423,25 +511,24 @@ export function AddProjectDialog({
                       })}
                     </div>
                     {/* Agent dropdown */}
-                    <select
+                    <AgencyDropdown
                       value={draft.agencyAgent?.selectedAgentSlug ?? DEFAULT_AGENCY_AGENT_SLUG}
-                      onChange={(e) =>
+                      onChange={(value) =>
                         setDraft((current) => ({
                           ...current,
                           agencyAgent: {
-                            ...current.agencyAgent!,
-                            selectedAgentSlug: e.target.value,
+                            enabled: current.agencyAgent?.enabled ?? false,
+                            selectedAgentSlug: value,
                           },
                         }))
                       }
-                      className="w-full bg-white dark:bg-[#1a1a1a] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] p-3 font-mono text-sm outline-none focus:border-[#0055ff]"
-                    >
-                      {agencyAgents.map((agent) => (
-                        <option key={agent.slug} value={agent.slug}>
-                          {agent.name} ({agent.category})
-                        </option>
-                      ))}
-                    </select>
+                      options={agencyAgents.map((agent) => ({
+                        value: agent.slug,
+                        label: agent.name,
+                        category: agent.category,
+                      }))}
+                      placeholder="Select agency personality..."
+                    />
                   </div>
                 )}
                 {agencyFetched && agencyAgents.length === 0 && (
