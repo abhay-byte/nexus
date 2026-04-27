@@ -6,6 +6,18 @@ export type AgentId =
   | "opencode"
   | string;
 
+export type ProjectCategory = "web" | "app" | "game" | "api" | "ml" | "tool" | "other";
+
+export const PROJECT_CATEGORIES: { value: ProjectCategory; label: string }[] = [
+  { value: "web", label: "Web" },
+  { value: "app", label: "App" },
+  { value: "game", label: "Game" },
+  { value: "api", label: "API / Backend" },
+  { value: "ml", label: "ML / AI" },
+  { value: "tool", label: "CLI Tool" },
+  { value: "other", label: "Other" },
+];
+
 export interface AgentConfig {
   id: AgentId;
   name: string;
@@ -43,6 +55,7 @@ export interface Project {
   path: string;
   color: string;
   icon?: string; // Absolute path to a PNG image file
+  category: ProjectCategory;
   defaultAgents: AgentId[];
   mcpServers: McpServerConfig[];
   agencyAgent?: AgencyAgentProjectConfig;
@@ -141,8 +154,13 @@ export interface AddProjectDraft {
   path: string;
   color: string;
   icon?: string;
+  category: ProjectCategory;
   defaultAgents: AgentId[];
   mcpServers: McpServerConfig[];
+  agencyAgent?: AgencyAgentProjectConfig;
+  specKit?: SpecKitProjectConfig;
+  cavemanAgentIds: AgentId[];
+  mcpPresetIds: string[];
 }
 
 export interface InstalledAgentStatus {

@@ -1065,6 +1065,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       name: session.title.split(" — ")[1] ?? session.projectId,
       path: session.cwd,
       color: "#534AB7",
+      category: "other" as const,
       defaultAgents: [],
       mcpServers: [],
       createdAt: Date.now(),

@@ -24,6 +24,7 @@ import type {
   Project,
   RuntimeInfo,
 } from "../../types";
+import { PROJECT_CATEGORIES } from "../../types";
 
 type SettingsSection = "appearance" | "terminal" | "session" | "projects" | "agents" | "keybindings";
 
@@ -951,6 +952,27 @@ function ProjectsPanel({
                     onChange={(v) => patchProject({ path: v })}
                     mono
                   />
+                </div>
+              </div>
+
+              {/* Category */}
+              <div className="space-y-3">
+                <FieldLabel>Project Category</FieldLabel>
+                <div className="flex flex-wrap gap-3">
+                  {PROJECT_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.value}
+                      type="button"
+                      onClick={() => patchProject({ category: cat.value })}
+                      className={`border-4 px-4 py-2 font-headline text-sm font-black uppercase ${
+                        selectedProject.category === cat.value
+                          ? "border-[#1a1a1a] bg-[#1a1a1a] text-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]"
+                          : "border-[#1a1a1a] bg-white text-[#1a1a1a] hover:bg-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#2a2a2a] dark:text-[#f5f0e8]"
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 

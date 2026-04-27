@@ -18,7 +18,7 @@ interface ProjectStoreState {
   initialize: () => Promise<void>;
   openAddProject: () => void;
   closeAddProject: () => void;
-  addProject: (draft: AddProjectDraft) => Promise<void>;
+  addProject: (draft: AddProjectDraft) => Promise<Project>;
   updateProject: (projectId: string, patch: Partial<Omit<Project, "id" | "createdAt">>) => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
   setActiveProject: (projectId: string) => void;
@@ -92,13 +92,14 @@ export const useProjectStore = create<ProjectStoreState>()(
         path: draft.path.trim(),
         color: draft.color || PROJECT_SWATCHES[0],
         icon: draft.icon,
-        defaultAgents: draft.defaultAgents,
+        category: draft.category ?? "other",
+        defaultAgents: draft.defaultAgents ?? [],
         mcpServers: draft.mcpServers ?? [],
-        agencyAgent: {
+        agencyAgent: draft.agencyAgent ?? {
           enabled: false,
           selectedAgentSlug: "agents-orchestrator",
         },
-        specKit: {
+        specKit: draft.specKit ?? {
           enabled: false,
           agentId: null,
         },
@@ -121,6 +122,7 @@ export const useProjectStore = create<ProjectStoreState>()(
 
       await syncProjectsToDisk(projects);
       await syncProjectMcpFiles(project, getMcpServersForProjectSync(project));
+      return project;
     },
     updateProject: async (projectId, patch) => {
       const projects = get().projects.map((project) =>
@@ -132,6 +134,7 @@ export const useProjectStore = create<ProjectStoreState>()(
               path: patch.path?.trim() ?? project.path,
               color: patch.color ?? project.color,
               icon: patch.icon ?? project.icon,
+              category: patch.category ?? project.category,
               defaultAgents: patch.defaultAgents ?? project.defaultAgents,
               mcpServers: patch.mcpServers ?? project.mcpServers,
               agencyAgent: patch.agencyAgent ?? project.agencyAgent,

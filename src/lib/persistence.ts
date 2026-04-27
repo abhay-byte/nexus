@@ -92,6 +92,7 @@ function parsePersistedJson<T>(contents: string): T {
 function sanitizeProject(project: Project): Project {
   return {
     ...project,
+    category: project.category ?? "other",
     defaultAgents: (project.defaultAgents ?? []).filter(
       (agentId) => !removedBuiltInAgentIds.has(agentId),
     ),

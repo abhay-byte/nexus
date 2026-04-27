@@ -31,7 +31,7 @@ interface AgencyAgentOption {
   name: string;
   category: string;
 }
-import type { Project, SystemHealth } from "./types";
+import type { AddProjectDraft, Project, SystemHealth } from "./types";
 
 function isRemoteProjectPath(path: string) {
   return /^[^@:\s]+@[^:\s]+:.+$/.test(path);
@@ -428,10 +428,45 @@ function App() {
   }, []);
 
   const handleSyncProjectAgencyAgent = useCallback(
-    (projectPath: string, slug: string, enabled: boolean) => {
-      return invoke<string>("sync_project_agency_agent", { projectPath, slug, enabled });
+    (projectPath: string, slug: string, enabled: boolean, category?: string) => {
+      return invoke<string>("sync_project_agency_agent", { projectPath, slug, enabled, category });
     },
     [],
+  );
+
+  const handleAddProjectSubmit = useCallback(
+    async (draft: AddProjectDraft) => {
+      const project = await addProject(draft);
+
+      // Agency sync
+      if (draft.agencyAgent?.enabled && draft.agencyAgent.selectedAgentSlug) {
+        await handleSyncProjectAgencyAgent(
+          project.path,
+          draft.agencyAgent.selectedAgentSlug,
+          true,
+          draft.category,
+        ).catch(() => undefined);
+      }
+
+      // Spec Kit bootstrap
+      if (draft.specKit?.enabled && draft.specKit.agentId) {
+        await handleBootstrapSpecKit(project.path, draft.specKit.agentId).catch(() => undefined);
+      }
+
+      // Caveman install
+      for (const agentId of draft.cavemanAgentIds) {
+        await handleInstallCaveman(agentId).catch(() => undefined);
+        if (!settings.cavemanInstalledAgentIds?.includes(agentId)) {
+          upsertSettings({
+            cavemanInstalledAgentIds: [
+              ...(settings.cavemanInstalledAgentIds ?? []),
+              agentId,
+            ],
+          });
+        }
+      }
+    },
+    [addProject, handleSyncProjectAgencyAgent, handleBootstrapSpecKit, handleInstallCaveman, upsertSettings, settings.cavemanInstalledAgentIds],
   );
 
   useEffect(() => {
@@ -468,6 +503,7 @@ function App() {
           project.path,
           project.agencyAgent.selectedAgentSlug,
           true,
+          project.category,
         ).catch(() => undefined);
       }
     })();
@@ -567,7 +603,7 @@ function App() {
                         agencyAgent={project.agencyAgent}
                         onUpdateAgencyAgent={(patch) => void updateProject(project.id, { agencyAgent: { enabled: project.agencyAgent?.enabled ?? false, selectedAgentSlug: project.agencyAgent?.selectedAgentSlug ?? "agents-orchestrator", ...patch } })}
                         onListAgencyAgents={handleListAgencyAgents}
-                        onSyncProjectAgencyAgent={(slug, enabled) => handleSyncProjectAgencyAgent(project.path, slug, enabled)}
+                        onSyncProjectAgencyAgent={(slug, enabled) => handleSyncProjectAgencyAgent(project.path, slug, enabled, project.category)}
                       />
 
                         <div
@@ -711,7 +747,8 @@ function App() {
       {isAddProjectOpen ? (
         <AddProjectDialog
           onClose={closeAddProject}
-          onSubmit={addProject}
+          onSubmit={handleAddProjectSubmit}
+          onListAgencyAgents={handleListAgencyAgents}
         />
       ) : null}
 

@@ -83,3 +83,7 @@ export const PROJECT_SWATCHES = [
   "#EF4444",
   "#EAB308",
 ];
+
+export const SPEC_KIT_SUPPORTED_AGENT_IDS = new Set(["codex", "claude-code", "gemini-cli"]);
+export const CAVEMAN_ONE_CLICK_AGENT_IDS = new Set(["claude-code", "gemini-cli", "cline", "kiro"]);
+export const DEFAULT_AGENCY_AGENT_SLUG = "agents-orchestrator";

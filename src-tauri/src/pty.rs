@@ -1305,11 +1305,29 @@ pub fn list_agency_agents() -> Result<Vec<AgencyAgentOption>, String> {
     result
 }
 
+fn build_category_preamble(category: &str) -> String {
+    let context = match category.to_lowercase().as_str() {
+        "web" => "This is a **web project**. Prioritize browser compatibility, responsive design, performance optimization, modern frontend frameworks, accessibility (a11y), SEO best practices, and secure client-server communication. Use appropriate bundlers, linters, and testing tools for web development.",
+        "app" => "This is an **application project** (mobile or desktop). Focus on platform-specific guidelines, native API integration, offline capabilities, state management, responsive layouts, app store requirements, and performance on target devices. Consider cross-platform frameworks where appropriate.",
+        "game" => "This is a **game development project**. Prioritize game loop architecture, rendering performance, asset management, physics, input handling, and platform constraints. Use appropriate game engines or frameworks, and follow industry standards for game design patterns.",
+        "api" => "This is an **API / backend project**. Focus on RESTful or GraphQL design, authentication/authorization, rate limiting, database modeling, caching strategies, observability, and scalable architecture. Prioritize security, testing, and documentation.",
+        "ml" => "This is a **machine learning / AI project**. Focus on data pipeline integrity, model versioning, experiment tracking, reproducibility, and efficient inference. Consider MLOps best practices, appropriate frameworks, and ethical AI guidelines.",
+        "tool" => "This is a **CLI tool / utility project**. Focus on command-line UX, scriptability, cross-platform compatibility, configuration management, and minimal dependencies. Follow Unix philosophy where applicable and provide clear documentation.",
+        _ => "This is a **general software project**. Focus on clean architecture, testing, documentation, and maintainability. Choose appropriate tools and frameworks for the problem domain.",
+    };
+    format!(
+        "## Project Context\n\n- **Category:** {}\n- **Context:** {}\n\n---\n\n",
+        category,
+        context
+    )
+}
+
 #[tauri::command]
 pub fn sync_project_agency_agent(
     project_path: String,
     slug: String,
     enabled: bool,
+    category: Option<String>,
 ) -> Result<String, String> {
     let project_dir = Path::new(&project_path);
     if !project_dir.is_dir() {
@@ -1356,10 +1374,16 @@ pub fn sync_project_agency_agent(
     }
 
     let source_content = fs::read_to_string(&selected.1).map_err(|e| e.to_string())?;
+    let category_block = category
+        .as_deref()
+        .filter(|c| !c.is_empty() && *c != "other")
+        .map(build_category_preamble)
+        .unwrap_or_default();
     let wrapped = format!(
-        "<!-- Nexus-managed agency agent. Source: {} ({}) -->\n\n{}",
+        "<!-- Nexus-managed agency agent. Source: {} ({}) -->\n\n{}{}",
         selected.0.name,
         selected.1.to_string_lossy(),
+        category_block,
         source_content
     );
     fs::write(&agent_file_path, wrapped).map_err(|e| e.to_string())?;
