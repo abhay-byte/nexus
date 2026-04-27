@@ -24,6 +24,8 @@ interface ProjectStoreState {
   setActiveProject: (projectId: string) => void;
   closeProjectTab: (projectId: string) => void;
   hydrateWorkspace: (openProjectIds: string[], activeProjectId: string | null) => void;
+  reorderProjects: (projectIds: string[]) => Promise<void>;
+  bumpProjectToTop: (projectId: string) => Promise<void>;
 }
 
 const syncProjectsToDisk = async (projects: Project[]) => {
@@ -86,6 +88,7 @@ export const useProjectStore = create<ProjectStoreState>()(
     openAddProject: () => set({ isAddProjectOpen: true }),
     closeAddProject: () => set({ isAddProjectOpen: false }),
     addProject: async (draft) => {
+      const now = Date.now();
       const project: Project = {
         id: nanoid(),
         name: draft.name.trim(),
@@ -103,11 +106,12 @@ export const useProjectStore = create<ProjectStoreState>()(
           enabled: false,
           agentId: null,
         },
-        createdAt: Date.now(),
+        createdAt: now,
+        sortOrder: now,
       };
 
       const projects = [...get().projects, project].sort(
-        (left, right) => left.createdAt - right.createdAt,
+        (left, right) => left.sortOrder - right.sortOrder,
       );
 
       set((state) => ({
@@ -198,5 +202,34 @@ export const useProjectStore = create<ProjectStoreState>()(
           activeProjectId: nextActive,
         };
       }),
+    reorderProjects: async (projectIds) => {
+      const projects = get().projects.map((project) => {
+        const index = projectIds.indexOf(project.id);
+        if (index === -1) return project;
+        return { ...project, sortOrder: index };
+      }).sort((left, right) => left.sortOrder - right.sortOrder);
+
+      set({ projects, error: null });
+      await syncProjectsToDisk(projects);
+    },
+    bumpProjectToTop: async (projectId) => {
+      const currentProjects = get().projects;
+      const target = currentProjects.find((p) => p.id === projectId);
+      if (!target) return;
+
+      const minOrder = Math.min(...currentProjects.map((p) => p.sortOrder));
+      if (target.sortOrder <= minOrder) return;
+
+      const projects = currentProjects
+        .map((project) =>
+          project.id === projectId
+            ? { ...project, sortOrder: minOrder - 1 }
+            : project,
+        )
+        .sort((left, right) => left.sortOrder - right.sortOrder);
+
+      set({ projects, error: null });
+      await syncProjectsToDisk(projects);
+    },
   })),
 );

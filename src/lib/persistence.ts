@@ -93,6 +93,7 @@ function sanitizeProject(project: Project): Project {
   return {
     ...project,
     category: project.category ?? "other",
+    sortOrder: project.sortOrder ?? project.createdAt ?? Date.now(),
     defaultAgents: (project.defaultAgents ?? []).filter(
       (agentId) => !removedBuiltInAgentIds.has(agentId),
     ),

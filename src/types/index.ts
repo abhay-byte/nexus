@@ -61,6 +61,7 @@ export interface Project {
   agencyAgent?: AgencyAgentProjectConfig;
   specKit?: SpecKitProjectConfig;
   createdAt: number;
+  sortOrder: number;
 }
 
 export type KeybindingMap = Record<string, string | null>;

@@ -15,6 +15,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onToggleCollapse: () => void;
   onResizeWidth: (width: number) => void;
+  onReorderProjects: (projectIds: string[]) => Promise<void>;
 }
 
 function getInitials(name: string) {
@@ -97,6 +98,7 @@ export function Sidebar({
   onOpenSettings,
   onToggleCollapse,
   onResizeWidth,
+  onReorderProjects,
 }: SidebarProps) {
   const [menu, setMenu] = useState<{
     projectId: string;
@@ -105,6 +107,10 @@ export function Sidebar({
   } | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+
+  // Drag-and-drop state
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropOverId, setDropOverId] = useState<string | null>(null);
 
   // Resize drag handler
   const startResize = useCallback(
@@ -140,6 +146,43 @@ export function Sidebar({
 
   const currentWidth = collapsed ? 64 : width;
 
+  const handleDragStart = (projectId: string) => (e: React.DragEvent) => {
+    e.dataTransfer.setData("text/plain", projectId);
+    e.dataTransfer.effectAllowed = "move";
+    setDragId(projectId);
+  };
+
+  const handleDragOver = (projectId: string) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragId && dragId !== projectId) {
+      e.dataTransfer.dropEffect = "move";
+      setDropOverId(projectId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDropOverId(null);
+  };
+
+  const handleDrop = (targetId: string) => (e: React.DragEvent) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData("text/plain");
+    setDragId(null);
+    setDropOverId(null);
+
+    if (!sourceId || sourceId === targetId) return;
+
+    const currentIds = projects.map((p) => p.id);
+    const sourceIndex = currentIds.indexOf(sourceId);
+    const targetIndex = currentIds.indexOf(targetId);
+    if (sourceIndex === -1 || targetIndex === -1) return;
+
+    const reordered = [...currentIds];
+    reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, sourceId);
+    void onReorderProjects(reordered);
+  };
+
   return (
     <aside
       ref={sidebarRef}
@@ -156,7 +199,7 @@ export function Sidebar({
             <h2 className="font-['Space_Grotesk'] font-bold uppercase text-xl font-black">
               WORKSPACE
             </h2>
-            <p className="font-['Space_Grotesk'] text-[10px] opacity-60">v0.1.6</p>
+            <p className="font-['Space_Grotesk'] text-[10px] opacity-60">v0.1.7</p>
           </div>
         )}
         <button
@@ -184,14 +227,22 @@ export function Sidebar({
           ) : (
             projects.map((project) => {
               const active = project.id === activeProjectId;
+              const isDropTarget = dropOverId === project.id;
               return (
                 <div
                   key={project.id}
-                  className={`flex items-center cursor-pointer transition-none border-y-2 border-transparent ${
+                  draggable
+                  onDragStart={handleDragStart(project.id)}
+                  onDragOver={handleDragOver(project.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop(project.id)}
+                  className={`flex items-center cursor-pointer transition-none border-y-2 ${
                     active
                       ? "bg-[#ffcc00] text-[#1a1a1a] border-[#1a1a1a] font-black"
                       : "text-[#1a1a1a] dark:text-[#f5f0e8] opacity-80 hover:bg-[#0055ff] hover:text-white border-b-[#1a1a1a] dark:border-b-[#f5f0e8]"
-                  } ${collapsed ? "justify-center px-2 py-3" : "justify-between px-6 py-4"}`}
+                  } ${collapsed ? "justify-center px-2 py-3" : "justify-between px-6 py-4"} ${
+                    isDropTarget ? "border-t-4 border-t-[#ffcc00]" : ""
+                  }`}
                   onClick={() => onSelectProject(project.id)}
                   onContextMenu={(event) => {
                     event.preventDefault();

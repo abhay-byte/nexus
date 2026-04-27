@@ -65,6 +65,8 @@ function App() {
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
   const closeProjectTab = useProjectStore((state) => state.closeProjectTab);
   const hydrateWorkspace = useProjectStore((state) => state.hydrateWorkspace);
+  const bumpProjectToTop = useProjectStore((state) => state.bumpProjectToTop);
+  const reorderProjects = useProjectStore((state) => state.reorderProjects);
 
   const sessionInitialized = useSessionStore((state) => state.initialized);
   const sessionError = useSessionStore((state) => state.error);
@@ -198,6 +200,20 @@ function App() {
     sessions,
     settings,
   ]);
+
+  // Auto-bump projects with running agents to the top of the sidebar.
+  useEffect(() => {
+    if (!sessionInitialized) return;
+    const runningProjectIds = new Set(
+      Object.values(sessions)
+        .filter((s) => s.status === "running" || s.status === "starting")
+        .map((s) => s.projectId),
+    );
+    for (const projectId of runningProjectIds) {
+      void bumpProjectToTop(projectId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionInitialized, sessions]);
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
@@ -554,6 +570,7 @@ function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           onToggleCollapse={toggleSidebar}
           onResizeWidth={setSidebarWidth}
+          onReorderProjects={reorderProjects}
         />
 
         <main className="flex-1 flex flex-col bg-[#e8e3da] dark:bg-[#1a1a1a] p-2 gap-2 overflow-hidden relative">

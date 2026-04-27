@@ -1060,6 +1060,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       return;
     }
 
+    const now = Date.now();
     const project = {
       id: session.projectId,
       name: session.title.split(" — ")[1] ?? session.projectId,
@@ -1068,7 +1069,8 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       category: "other" as const,
       defaultAgents: [],
       mcpServers: [],
-      createdAt: Date.now(),
+      createdAt: now,
+      sortOrder: now,
     } as Project;
 
     const agent: AgentConfig = {
