@@ -73,15 +73,18 @@
   }
 
   /* ── Pane grid ── */
+  .pane-grid-wrapper {
+    overflow: auto !important;
+  }
   .pane-grid {
-    display: flex !important;
-    flex-direction: column !important;
-    overflow-y: auto;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 1fr !important;
+    height: 100% !important;
   }
   .pane-grid > div[style*="gridColumn"] {
     grid-column: 1 !important;
     grid-row: auto !important;
-    min-height: 200px;
+    min-height: 300px;
   }
   .pane-grid__divider {
     display: none !important;
@@ -98,13 +101,29 @@
   /* ── Settings ── */
   .nexus-settings {
     flex-direction: column !important;
+    max-width: 100vw !important;
   }
-  .nexus-settings-nav {
-    width: 100% !important;
+  .nexus-settings > aside {
+    flex-direction: column !important;
     border-right: none !important;
     border-bottom: 4px solid #1a1a1a;
-    flex-direction: row;
-    overflow-x: auto;
+    max-height: 45vh;
+  }
+  .nexus-settings-nav {
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nexus-settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .nexus-settings-nav > button {
+    flex-shrink: 0 !important;
+    min-width: 140px;
+    border-bottom: 4px solid transparent;
   }
 
   /* ── Agent selector grid ── */

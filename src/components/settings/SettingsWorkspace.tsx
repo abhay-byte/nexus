@@ -1943,7 +1943,16 @@ export function SettingsWorkspace({
           {/* ── Sidebar nav ── */}
           <aside className="flex flex-col border-b-4 border-[#1a1a1a] bg-[#f5f0e8] dark:border-[#f5f0e8] dark:bg-[#111111] lg:w-[280px] lg:min-h-0 lg:border-b-0 lg:border-r-4">
             {/* Header */}
-            <div className="border-b-4 border-[#1a1a1a] p-6 dark:border-[#f5f0e8]">
+            <div className="border-b-4 border-[#1a1a1a] p-6 dark:border-[#f5f0e8] relative">
+              {/* Mobile close button */}
+              <button
+                type="button"
+                onClick={onClose}
+                className="nexus-mobile-only absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-[#e63b2e] text-white border-2 border-[#1a1a1a] font-black text-sm"
+                title="Close settings"
+              >
+                ×
+              </button>
               <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Nexus Terminal</p>
               <h1 id="settings-title" className="mt-3 font-headline text-5xl font-black uppercase leading-none">
                 Settings
