@@ -271,7 +271,7 @@ export function TerminalTabBar({
   const kanbanActive = activeTabId === KANBAN_TAB_ID;
 
   return (
-    <div className="flex items-center bg-[#1a1a1a] dark:bg-[#0d0d0d] border-b-2 border-[#333] shrink-0">
+    <div className="nexus-tabbar flex items-center bg-[#1a1a1a] dark:bg-[#0d0d0d] border-b-2 border-[#333] shrink-0">
       {/* Left: scrollable tabs area */}
       <div className="flex items-center overflow-x-auto scrollbar-none min-w-0">
         {/* Project panel toggle — before Kanban */}
@@ -352,7 +352,7 @@ export function TerminalTabBar({
       <div className="flex-1 min-w-0" />
 
       {/* Right: fixed action buttons (not scrollable, no overflow clipping) */}
-      <div className="flex items-center shrink-0">
+      <div className="nexus-tabbar-right flex items-center shrink-0">
         {/* Agency Agent dropdown */}
         {onUpdateAgencyAgent && (
           <div className="flex items-center gap-1 px-2 border-l-2 border-[#333] shrink-0">

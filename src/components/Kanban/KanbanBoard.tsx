@@ -58,7 +58,7 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
       </div>
 
       {/* Columns */}
-      <div className="flex flex-1 min-h-0 gap-0 overflow-x-auto">
+      <div className="nexus-kanban-columns flex flex-1 min-h-0 gap-0 overflow-x-auto">
         {KANBAN_COLUMNS.map((col) => {
           const colTasks = tasks.filter((t) => t.status === col.id);
           const isOver = dragOverCol === col.id;
@@ -66,7 +66,7 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
           return (
             <div
               key={col.id}
-              className={`flex flex-col flex-1 min-w-[200px] border-r-2 border-black dark:border-[#222] transition-colors ${isOver ? "bg-[#e8e3da] dark:bg-[#1a1a1a]" : ""}`}
+              className={`nexus-kanban-column flex flex-col flex-1 min-w-[200px] border-r-2 border-black dark:border-[#222] transition-colors ${isOver ? "bg-[#e8e3da] dark:bg-[#1a1a1a]" : ""}`}
               onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.id); }}
               onDragLeave={() => setDragOverCol(null)}
               onDrop={(e) => {

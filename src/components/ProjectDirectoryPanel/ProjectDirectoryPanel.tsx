@@ -357,7 +357,7 @@ export function ProjectDirectoryPanel({
   return (
     <>
       <div
-        className="relative flex flex-col border-r-2 border-[#ccc] dark:border-[#333] bg-[#f5f0e8] dark:bg-[#1a1a1a] shrink-0 overflow-hidden"
+        className="nexus-project-panel relative flex flex-col border-r-2 border-[#ccc] dark:border-[#333] bg-[#f5f0e8] dark:bg-[#1a1a1a] shrink-0 overflow-hidden"
         style={{ width }}
         onClick={() => setContextMenu(null)}
       >

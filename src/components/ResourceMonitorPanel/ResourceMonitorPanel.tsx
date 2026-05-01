@@ -127,7 +127,7 @@ export function ResourceMonitorPanel({
 
   return (
     <div
-      className="relative flex flex-col h-full bg-[#f5f0e8] dark:bg-[#1a1a1a] border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] shrink-0"
+      className="nexus-overlay-panel relative flex flex-col h-full bg-[#f5f0e8] dark:bg-[#1a1a1a] border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] shrink-0"
       style={{ width }}
     >
       {/* Resize handle on left edge */}
@@ -199,7 +199,7 @@ export function ResourceMonitorPanel({
       </div>
 
       {/* Process list */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="nexus-table-responsive flex-1 overflow-y-auto min-h-0">
         {sortedProcesses.length === 0 ? (
           <div className="flex items-center justify-center h-32">
             <span className="font-mono text-[10px] text-[#888] uppercase">Loading processes…</span>

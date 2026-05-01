@@ -69,7 +69,7 @@ export function StatusBar({ project, runningCount, runtimeInfo, health }: Status
   const osLabel = formatOsLabel(runtimeInfo.os);
 
   return (
-    <footer className="bg-[#1a1a1a] text-[#a0a0a0] flex justify-between px-4 py-1.5 text-[10px] font-mono uppercase z-50 shrink-0 border-t-2 border-[#1a1a1a]">
+    <footer className="nexus-statusbar bg-[#1a1a1a] text-[#a0a0a0] flex justify-between px-4 py-1.5 text-[10px] font-mono uppercase z-50 shrink-0 border-t-2 border-[#1a1a1a]">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1.5">
           <span className={`material-symbols-outlined text-xs ${runningCount > 0 ? "text-[#00ff00]" : "text-[#ffcc00]"}`}>check_circle</span>

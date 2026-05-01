@@ -552,31 +552,50 @@ function App() {
   );
 
   return (
-    <div className={`bg-background dark:bg-[#1a1a1a] text-on-surface dark:text-[#f5f0e8] font-body overflow-hidden h-screen flex flex-col ${settings.theme === "dark" ? "dark" : ""}`}>
+    <div className={`nexus-app bg-background dark:bg-[#1a1a1a] text-on-surface dark:text-[#f5f0e8] font-body overflow-hidden h-screen flex flex-col ${settings.theme === "dark" ? "dark" : ""}`}>
       <Titlebar sidebarCollapsed={sidebarCollapsed} />
-      <div className={`flex flex-1 overflow-hidden ${sidebarCollapsed ? "pt-10" : "pt-16"}`}>
-        <Sidebar
-          projects={projects}
-          activeProjectId={activeProjectId}
-          projectCounts={projectCounts}
-          collapsed={sidebarCollapsed}
-          width={sidebarWidth}
-          onSelectProject={setActiveProject}
-          onAddProject={openAddProject}
-          onRemoveProject={handleRemoveProject}
-          onOpenProject={(projectId) => {
-            const project = projects.find((entry) => entry.id === projectId);
-            if (project) {
-              handleOpenProjectPath(project.path);
-            }
-          }}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onToggleCollapse={toggleSidebar}
-          onResizeWidth={setSidebarWidth}
-          onReorderProjects={reorderProjects}
+      {/* Mobile sidebar overlay */}
+      {!sidebarCollapsed && (
+        <div
+          className="nexus-mobile-only nexus-sidebar-overlay"
+          onClick={toggleSidebar}
+          aria-hidden="true"
         />
+      )}
+      {/* Mobile hamburger */}
+      <button
+        className="nexus-mobile-only fixed top-2 left-2 z-[110] bg-[#ffcc00] text-[#1a1a1a] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] w-10 h-10 flex items-center justify-center font-black text-lg shadow-[4px_4px_0px_0px_#1a1a1a]"
+        onClick={toggleSidebar}
+        type="button"
+        title="Menu"
+      >
+        <span className="material-symbols-outlined">menu</span>
+      </button>
+      <div className={`flex flex-1 overflow-hidden ${sidebarCollapsed ? "pt-10" : "pt-16"}`}>
+        <div className={`${sidebarCollapsed ? "" : "max-md:fixed max-md:inset-0 max-md:z-[100]"}`}>
+          <Sidebar
+            projects={projects}
+            activeProjectId={activeProjectId}
+            projectCounts={projectCounts}
+            collapsed={sidebarCollapsed}
+            width={sidebarWidth}
+            onSelectProject={setActiveProject}
+            onAddProject={openAddProject}
+            onRemoveProject={handleRemoveProject}
+            onOpenProject={(projectId) => {
+              const project = projects.find((entry) => entry.id === projectId);
+              if (project) {
+                handleOpenProjectPath(project.path);
+              }
+            }}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onToggleCollapse={toggleSidebar}
+            onResizeWidth={setSidebarWidth}
+            onReorderProjects={reorderProjects}
+          />
+        </div>
 
-        <main className="flex-1 flex flex-col bg-[#e8e3da] dark:bg-[#1a1a1a] p-2 gap-2 overflow-hidden relative">
+        <main className="nexus-main flex-1 flex flex-col bg-[#e8e3da] dark:bg-[#1a1a1a] p-2 gap-2 overflow-hidden relative">
           <section className="flex-1 min-h-0 flex flex-row overflow-hidden relative">
             <ProjectDirectoryPanel
               project={activeProject}

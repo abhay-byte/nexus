@@ -186,7 +186,8 @@ export function Sidebar({
   return (
     <aside
       ref={sidebarRef}
-      className="bg-[#f5f0e8] dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] flex flex-col h-full overflow-y-auto border-r-4 border-[#1a1a1a] dark:border-[#f5f0e8] z-40 shrink-0 font-['Space_Grotesk'] font-bold uppercase relative transition-none"
+      data-open={!collapsed}
+      className="nexus-sidebar bg-[#f5f0e8] dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] flex flex-col h-full overflow-y-auto border-r-4 border-[#1a1a1a] dark:border-[#f5f0e8] z-40 shrink-0 font-['Space_Grotesk'] font-bold uppercase relative transition-none"
       style={{ width: currentWidth }}
       onClick={() => setMenu(null)}
     >

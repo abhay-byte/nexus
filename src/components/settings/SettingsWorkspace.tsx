@@ -1935,7 +1935,7 @@ export function SettingsWorkspace({
         className={`absolute inset-y-0 right-0 flex w-full justify-end transition-all duration-300 ${open ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"}`}
       >
         <section
-          className="flex h-full w-full max-w-[1200px] flex-col overflow-hidden border-l-8 border-[#1a1a1a] bg-[#e8e3da] text-[#1a1a1a] shadow-2xl dark:border-[#f5f0e8] dark:bg-[#0f0f0f] dark:text-[#f5f0e8] lg:flex-row"
+          className="nexus-settings flex h-full w-full max-w-[1200px] flex-col overflow-hidden border-l-8 border-[#1a1a1a] bg-[#e8e3da] text-[#1a1a1a] shadow-2xl dark:border-[#f5f0e8] dark:bg-[#0f0f0f] dark:text-[#f5f0e8] lg:flex-row"
           role="dialog"
           aria-modal="true"
           aria-labelledby="settings-title"
@@ -1954,7 +1954,7 @@ export function SettingsWorkspace({
             </div>
 
             {/* Nav buttons — horizontally scrollable on small screens, vertical on lg */}
-            <nav className="flex overflow-x-auto lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:flex-1">
+            <nav className="nexus-settings-nav flex overflow-x-auto lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:flex-1">
               {SETTINGS_SECTIONS.map((entry) => {
                 const active = section === entry.id;
                 return (

@@ -655,7 +655,7 @@ export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose,
 
   return (
     <div
-      className="relative flex flex-col h-full bg-[#f5f0e8] dark:bg-[#0e0e0e] border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] shrink-0"
+      className="nexus-overlay-panel relative flex flex-col h-full bg-[#f5f0e8] dark:bg-[#0e0e0e] border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] shrink-0"
       style={{ width }}
     >
       {/* Resize handle on left edge */}

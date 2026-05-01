@@ -113,7 +113,7 @@ export function Pane({
         ) : (
           <div className="flex flex-col items-center justify-center p-8 text-center h-full bg-[#f5f0e8] dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8]">
             <p className="font-['Space_Grotesk'] font-bold text-xl mb-6">Which agent should run here?</p>
-            <div className="flex flex-wrap gap-4 justify-center max-w-lg">
+            <div className="nexus-agent-grid flex flex-wrap gap-4 justify-center max-w-lg">
               {(() => {
                 // If installedSet is empty (detection failed), show all agents as fallback
                 const filtered = visibleAgents.filter(
