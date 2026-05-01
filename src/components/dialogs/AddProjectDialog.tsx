@@ -193,6 +193,7 @@ export function AddProjectDialog({
       directory: true,
       multiple: false,
       title: "Select a project folder",
+      defaultPath: draft.path || undefined,
     });
     if (typeof selected !== "string") return;
     setDraft((current) => ({

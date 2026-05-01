@@ -1,4 +1,5 @@
 import { listen, invoke, isTauri, wsSpawn, wsWrite, wsResize, wsKill } from "../lib/api";
+import { getDirectWriter } from "../lib/directWriter";
 import { nanoid } from "nanoid";
 import { create } from "zustand";
 import { KNOWN_AGENTS } from "../constants/agents";
@@ -23,7 +24,7 @@ import type {
 
 type Orientation = "horizontal" | "vertical";
 const KANBAN_TAB_ID = "__kanban__";
-const SESSION_LOG_LIMIT = 500_000;
+const SESSION_LOG_LIMIT = 250_000;
 const SESSION_LOG_FLUSH_MS = 100;
 const sessionOutputUnlisteners = new Map<string, Promise<() => void>>();
 const sessionExitUnlisteners = new Map<string, Promise<() => void>>();
@@ -394,6 +395,11 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
 
     if (persisted) {
       hydrateWorkspace(persisted.openProjects, persisted.activeProjectId);
+    } else if (projects.length > 0) {
+      // No persisted workspace state (fresh install or first launch after wipe).
+      // Auto-open the most recently sorted project so the workspace isn't blank.
+      const firstProject = projects[0];
+      hydrateWorkspace([firstProject.id], firstProject.id);
     }
 
     for (const project of projects) {
@@ -1121,6 +1127,15 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
   },
   appendSessionOutput: (sessionId, chunk) =>
     {
+      // Direct write to xterm.js — bypasses the log string entirely for
+      // rendering.  This eliminates string churn, delta computation, and
+      // the truncation-triggered full-rewrite bug that dropped characters.
+      const directWriter = getDirectWriter(sessionId);
+      if (directWriter) {
+        directWriter(chunk);
+      }
+
+      // Still accumulate in the log string for search / export.
       const decoder = sessionLogDecoders.get(sessionId) ?? new TextDecoder();
       sessionLogDecoders.set(sessionId, decoder);
       queueSessionOutput(sessionId, decoder.decode(chunk, { stream: true }));

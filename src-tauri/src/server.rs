@@ -12,6 +12,90 @@ use std::{
 };
 use tiny_http::{Header, Response, Server, StatusCode};
 
+/// ─── Port cleanup ───────────────────────────────────────────────────────────
+
+/// Kill any process already listening on the given TCP port so the
+/// headless server can bind immediately without "Address already in use".
+fn kill_port_occupiers(port: u16) {
+    #[cfg(unix)]
+    {
+        // Try fuser first (most reliable on Linux)
+        let _ = std::process::Command::new("fuser")
+            .args(["-k", &format!("{}/tcp", port)])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        // Fallback: lsof + kill
+        if let Ok(output) = std::process::Command::new("lsof")
+            .args(["-t", "-i", &format!("tcp:{}", port)])
+            .output()
+        {
+            let pids = String::from_utf8_lossy(&output.stdout);
+            for pid in pids.lines().filter(|l| !l.is_empty()) {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", pid])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+            }
+        }
+
+        // Final fallback: read /proc/*/fd/ ourselves
+        let target = format!(":{:04X}", port); // e.g. ":1EBC" for 7878
+        if let Ok(entries) = std::fs::read_dir("/proc") {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let pid = entry.file_name().to_string_lossy().to_string();
+                if !pid.chars().all(|c| c.is_ascii_digit()) {
+                    continue;
+                }
+                let fd_dir = format!("/proc/{}/fd", pid);
+                if let Ok(fds) = std::fs::read_dir(&fd_dir) {
+                    for fd in fds.filter_map(|f| f.ok()) {
+                        if let Ok(link) = std::fs::read_link(fd.path()) {
+                            let s = link.to_string_lossy();
+                            if s.contains("socket:[") && (s.contains(&target) || s.to_lowercase().contains(&target.to_lowercase())) {
+                                let _ = std::process::Command::new("kill")
+                                    .args(["-9", &pid])
+                                    .stdout(std::process::Stdio::null())
+                                    .stderr(std::process::Stdio::null())
+                                    .status();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        // Use netstat -ano to find PID, then taskkill /F /PID <pid>
+        let port_str = format!("{}:{}\r\n", port, port);
+        if let Ok(output) = std::process::Command::new("netstat")
+            .args(["-ano", "-p", "tcp"])
+            .output()
+        {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 5 {
+                    // Format: Proto  Local Address          Foreign Address        State           PID
+                    if parts[1].ends_with(&format!(":{}", port)) {
+                        let pid = parts[4];
+                        let _ = std::process::Command::new("taskkill")
+                            .args(["/F", "/PID", pid])
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .status();
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// ─── IP Filtering ───────────────────────────────────────────────────────────
 
 /// Build the allowlist from:
@@ -73,7 +157,7 @@ fn guess_mime(path: &Path) -> &'static str {
 }
 
 fn find_dist_dir() -> Option<PathBuf> {
-    // Try relative to executable
+    // 1. Try relative to executable
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             for rel in &["dist", "../dist", "../../dist", "../../../dist"] {
@@ -84,12 +168,30 @@ fn find_dist_dir() -> Option<PathBuf> {
             }
         }
     }
-    // Try current working directory
-    let cwd = std::env::current_dir().ok()?;
-    let candidate = cwd.join("dist");
+
+    // 2. Try current working directory
+    if let Ok(cwd) = std::env::current_dir() {
+        let candidate = cwd.join("dist");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+    }
+
+    // 3. Try compile-time project directory (for dev builds)
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let candidate = manifest_dir.join("../dist");
     if candidate.is_dir() {
         return Some(candidate);
     }
+
+    // 4. Try XDG data directories
+    if let Ok(home) = std::env::var("HOME") {
+        let candidate = PathBuf::from(&home).join(".local/share/nexus/dist");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+    }
+
     None
 }
 
@@ -237,6 +339,8 @@ pub fn start_http_server(
         .unwrap_or(7878);
 
     let addr = format!("0.0.0.0:{}", port);
+    kill_port_occupiers(port);
+    std::thread::sleep(std::time::Duration::from_millis(500));
     let server = match Server::http(&addr) {
         Ok(s) => {
             println!("[Nexus Server] ============================================");

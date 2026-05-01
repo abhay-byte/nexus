@@ -271,8 +271,8 @@ pub fn system_health_inner(state: &AppState) -> SystemHealth {
 }
 
 #[tauri::command]
-pub fn system_health(state: State<'_, AppState>) -> SystemHealth {
-    system_health_inner(&state)
+pub fn system_health(state: State<'_, Arc<AppState>>) -> SystemHealth {
+    system_health_inner(&*state)
 }
 
 #[derive(Serialize, Clone)]
@@ -306,8 +306,8 @@ pub fn list_processes_inner(state: &AppState) -> Vec<ProcessInfo> {
 }
 
 #[tauri::command]
-pub fn list_processes(state: State<'_, AppState>) -> Vec<ProcessInfo> {
-    list_processes_inner(&state)
+pub fn list_processes(state: State<'_, Arc<AppState>>) -> Vec<ProcessInfo> {
+    list_processes_inner(&*state)
 }
 
 #[tauri::command]
@@ -504,7 +504,7 @@ pub async fn spawn_pty(
     rows: u16,
     shell_override: Option<String>,
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let is_qwen = command == "qwen";
     let chosen_shell = default_shell(shell_override.clone());
@@ -690,9 +690,9 @@ pub fn write_pty_inner(
 pub fn write_pty(
     session_id: String,
     data: Vec<u8>,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    write_pty_inner(&session_id, &data, &state)
+    write_pty_inner(&session_id, &data, &*state)
 }
 
 pub fn resize_pty_inner(
@@ -722,9 +722,9 @@ pub fn resize_pty(
     session_id: String,
     cols: u16,
     rows: u16,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    resize_pty_inner(&session_id, cols, rows, &state)
+    resize_pty_inner(&session_id, cols, rows, &*state)
 }
 
 pub fn kill_pty_inner(session_id: &str, state: &AppState) -> Result<(), String> {
@@ -744,8 +744,8 @@ pub fn kill_pty_inner(session_id: &str, state: &AppState) -> Result<(), String> 
 }
 
 #[tauri::command]
-pub fn kill_pty(session_id: String, state: State<'_, AppState>) -> Result<(), String> {
-    kill_pty_inner(&session_id, &state)
+pub fn kill_pty(session_id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    kill_pty_inner(&session_id, &*state)
 }
 
 // ─── Git diff structures ────────────────────────────────────────────────────

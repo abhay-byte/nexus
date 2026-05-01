@@ -3,7 +3,10 @@
  * Works in both Tauri desktop mode and browser mode
  */
 
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
+
+/** Detect if running inside Tauri desktop app */
+export const isTauri = tauriIsTauri;
 
 const API_BASE = (() => {
   const host = window.location.host;
@@ -14,11 +17,6 @@ const WS_BASE = (() => {
   const host = window.location.host;
   return `ws://${host}`;
 })();
-
-/** Detect if running inside Tauri desktop app */
-export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI__" in window;
-}
 
 /** Unified invoke that works in both Tauri and browser */
 export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
