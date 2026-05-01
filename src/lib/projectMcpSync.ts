@@ -1,5 +1,4 @@
-import { dirname, homeDir } from "@tauri-apps/api/path";
-import { create, exists, mkdir, readTextFile } from "@tauri-apps/plugin-fs";
+import { isTauri } from "./api";
 import type { AgentId, McpServerConfig, Project } from "../types";
 
 type JsonRecord = Record<string, unknown>;
@@ -30,6 +29,19 @@ type CodexHomeMcpServer = {
 
 const MANAGED_MANIFEST_RELATIVE_PATH = ".nexus/mcp-managed.json";
 export const PROJECT_PATH_PLACEHOLDER = "<PROJECT_PATH>";
+
+// Lazy-load Tauri APIs so browser mode doesn't crash on import
+let fsModule: typeof import("@tauri-apps/plugin-fs") | null = null;
+let pathModule: typeof import("@tauri-apps/api/path") | null = null;
+
+async function getFs() {
+  if (!fsModule) fsModule = await import("@tauri-apps/plugin-fs");
+  return fsModule;
+}
+async function getPath() {
+  if (!pathModule) pathModule = await import("@tauri-apps/api/path");
+  return pathModule;
+}
 
 const AGENT_MCP_ADAPTERS: Partial<Record<AgentId, AgentConfigAdapter>> = {
   "claude-code": {
@@ -338,30 +350,35 @@ function applyEntriesToConfig(
 }
 
 async function ensureParentDirectory(path: string) {
-  await mkdir(await dirname(path), { recursive: true });
+  const fs = await getFs();
+  const pathMod = await getPath();
+  await fs.mkdir(await pathMod.dirname(path), { recursive: true });
 }
 
 async function readConfigRoot(path: string, mode: "json" | "jsonc" = "json") {
-  const fileExists = await exists(path);
+  const fs = await getFs();
+  const fileExists = await fs.exists(path);
   if (!fileExists) {
     return null;
   }
 
-  return asRecord(parseJsonLike<JsonRecord>(await readTextFile(path), mode));
+  return asRecord(parseJsonLike<JsonRecord>(await fs.readTextFile(path), mode));
 }
 
 async function readJsonFile<T>(path: string): Promise<T | null> {
-  const fileExists = await exists(path);
+  const fs = await getFs();
+  const fileExists = await fs.exists(path);
   if (!fileExists) {
     return null;
   }
 
-  return JSON.parse(await readTextFile(path)) as T;
+  return JSON.parse(await fs.readTextFile(path)) as T;
 }
 
 async function writeJsonFile(path: string, value: unknown) {
+  const fs = await getFs();
   await ensureParentDirectory(path);
-  const file = await create(path);
+  const file = await fs.create(path);
   await file.write(new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`));
   await file.close();
 }
@@ -543,8 +560,10 @@ function parseCodexHomeMcpServers(content: string) {
 
 async function readCodexHomeMcpServers() {
   try {
-    const codexConfigPath = `${(await homeDir()).replace(/[\\/]+$/, "")}/.codex/config.toml`;
-    const content = await readTextFile(codexConfigPath);
+    const pathMod = await getPath();
+    const fs = await getFs();
+    const codexConfigPath = `${(await pathMod.homeDir()).replace(/[\\/]+$/, "")}/.codex/config.toml`;
+    const content = await fs.readTextFile(codexConfigPath);
     return parseCodexHomeMcpServers(content);
   } catch {
     return [];
@@ -618,6 +637,7 @@ export async function buildProjectAgentLaunchOverrides(
 }
 
 export async function syncProjectMcpFiles(project: Project, mcpServers: McpServerConfig[]) {
+  if (!isTauri()) return;
   const manifestPath = joinProjectPath(project.path, MANAGED_MANIFEST_RELATIVE_PATH);
   const manifest = (await readJsonFile<ManagedManifest>(manifestPath)) ?? {
     version: 1 as const,
@@ -661,7 +681,8 @@ export async function syncProjectMcpFiles(project: Project, mcpServers: McpServe
     };
     const nextConfig = applyEntriesToConfig(adapter, currentRoot, nextEntries);
 
-    const hadConfigFile = await exists(configPath);
+    const fs = await getFs();
+    const hadConfigFile = await fs.exists(configPath);
     const nextServerCount = Object.keys(nextEntries).length;
     if (hadConfigFile || nextServerCount > 0) {
       await writeJsonFile(configPath, nextConfig);

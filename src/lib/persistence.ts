@@ -1,12 +1,6 @@
-import {
-  BaseDirectory,
-  create,
-  exists,
-  mkdir,
-  readTextFile,
-} from "@tauri-apps/plugin-fs";
 import { KNOWN_AGENTS } from "../constants/agents";
 import { getDefaultKeybindings } from "../constants/keybindings";
+import { isTauri, httpApi } from "./api";
 import type {
   AgentId,
   AppSettings,
@@ -15,6 +9,15 @@ import type {
   Project,
   SpecKitProjectConfig,
 } from "../types";
+
+// Lazy-load Tauri fs plugin so browser mode doesn't crash on import
+let fsModule: typeof import("@tauri-apps/plugin-fs") | null = null;
+async function getFs() {
+  if (!fsModule) {
+    fsModule = await import("@tauri-apps/plugin-fs");
+  }
+  return fsModule;
+}
 
 const DATA_DIR = "data";
 const PROJECTS_FILE = `${DATA_DIR}/projects.json`;
@@ -52,10 +55,11 @@ function sanitizeMcpServers(settings: Pick<AppSettings, "mcpServers">) {
 }
 
 async function ensureDataDir() {
-  const hasDir = await exists(DATA_DIR, { baseDir: BaseDirectory.AppConfig });
+  const fs = await getFs();
+  const hasDir = await fs.exists(DATA_DIR, { baseDir: fs.BaseDirectory.AppConfig });
   if (!hasDir) {
-    await mkdir(DATA_DIR, {
-      baseDir: BaseDirectory.AppConfig,
+    await fs.mkdir(DATA_DIR, {
+      baseDir: fs.BaseDirectory.AppConfig,
       recursive: true,
     });
   }
@@ -118,7 +122,8 @@ async function syncSpecKitState(project: Project): Promise<Project> {
   }
 
   try {
-    const hasSpecifyDir = await exists(`${sanitized.path.replace(/[\\/]+$/, "")}/.specify`);
+    const fs = await getFs();
+    const hasSpecifyDir = await fs.exists(`${sanitized.path.replace(/[\\/]+$/, "")}/.specify`);
     if (!hasSpecifyDir) {
       return sanitized;
     }
@@ -136,18 +141,29 @@ async function syncSpecKitState(project: Project): Promise<Project> {
 }
 
 export async function loadProjects(): Promise<Project[]> {
-  await ensureDataDir();
+  if (!isTauri()) {
+    // Browser mode: fetch from HTTP API
+    try {
+      const projects = await httpApi.get<Project[]>("/api/projects");
+      return projects.map((p) => sanitizeProject(p));
+    } catch {
+      return [];
+    }
+  }
 
-  const hasFile = await exists(PROJECTS_FILE, {
-    baseDir: BaseDirectory.AppConfig,
+  await ensureDataDir();
+  const fs = await getFs();
+
+  const hasFile = await fs.exists(PROJECTS_FILE, {
+    baseDir: fs.BaseDirectory.AppConfig,
   });
 
   if (!hasFile) {
     return [];
   }
 
-  const contents = await readTextFile(PROJECTS_FILE, {
-    baseDir: BaseDirectory.AppConfig,
+  const contents = await fs.readTextFile(PROJECTS_FILE, {
+    baseDir: fs.BaseDirectory.AppConfig,
   });
 
   const parsed = parsePersistedJson<PersistedProjects>(contents);
@@ -160,10 +176,29 @@ export async function loadProjects(): Promise<Project[]> {
 }
 
 export async function saveProjects(projects: Project[]) {
-  await ensureDataDir();
+  if (!isTauri()) {
+    // Browser mode: sync each project to HTTP API
+    try {
+      const existing = await httpApi.get<Array<{ id?: string }>>("/api/projects");
+      const existingIds = new Set(existing.map((p) => p.id));
+      for (const project of projects) {
+        if (existingIds.has(project.id)) {
+          await httpApi.put(`/api/projects/${project.id}`, project);
+        } else {
+          await httpApi.post("/api/projects", project);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to sync projects to server:", error);
+    }
+    return;
+  }
 
-  const file = await create(PROJECTS_FILE, {
-    baseDir: BaseDirectory.AppConfig,
+  await ensureDataDir();
+  const fs = await getFs();
+
+  const file = await fs.create(PROJECTS_FILE, {
+    baseDir: fs.BaseDirectory.AppConfig,
   });
 
   const payload: PersistedProjects = {
@@ -182,18 +217,21 @@ export async function saveProjects(projects: Project[]) {
 }
 
 export async function loadSessions(): Promise<PersistedSessions | null> {
-  await ensureDataDir();
+  if (!isTauri()) return null;
 
-  const hasFile = await exists(SESSIONS_FILE, {
-    baseDir: BaseDirectory.AppConfig,
+  await ensureDataDir();
+  const fs = await getFs();
+
+  const hasFile = await fs.exists(SESSIONS_FILE, {
+    baseDir: fs.BaseDirectory.AppConfig,
   });
 
   if (!hasFile) {
     return null;
   }
 
-  const contents = await readTextFile(SESSIONS_FILE, {
-    baseDir: BaseDirectory.AppConfig,
+  const contents = await fs.readTextFile(SESSIONS_FILE, {
+    baseDir: fs.BaseDirectory.AppConfig,
   });
 
   const parsed = parsePersistedJson<PersistedSessions>(contents);
@@ -230,10 +268,13 @@ export async function loadSessions(): Promise<PersistedSessions | null> {
 }
 
 export async function saveSessions(payload: PersistedSessions) {
-  await ensureDataDir();
+  if (!isTauri()) return;
 
-  const file = await create(SESSIONS_FILE, {
-    baseDir: BaseDirectory.AppConfig,
+  await ensureDataDir();
+  const fs = await getFs();
+
+  const file = await fs.create(SESSIONS_FILE, {
+    baseDir: fs.BaseDirectory.AppConfig,
   });
 
   try {
@@ -247,18 +288,21 @@ export async function saveSessions(payload: PersistedSessions) {
 }
 
 export async function exportLogFile(filename: string, contents: string) {
+  if (!isTauri()) return;
+
   await ensureDataDir();
+  const fs = await getFs();
   const exportDir = `${DATA_DIR}/exports`;
-  const hasDir = await exists(exportDir, { baseDir: BaseDirectory.AppConfig });
+  const hasDir = await fs.exists(exportDir, { baseDir: fs.BaseDirectory.AppConfig });
   if (!hasDir) {
-    await mkdir(exportDir, {
-      baseDir: BaseDirectory.AppConfig,
+    await fs.mkdir(exportDir, {
+      baseDir: fs.BaseDirectory.AppConfig,
       recursive: true,
     });
   }
 
-  const file = await create(`${exportDir}/${filename}`, {
-    baseDir: BaseDirectory.AppConfig,
+  const file = await fs.create(`${exportDir}/${filename}`, {
+    baseDir: fs.BaseDirectory.AppConfig,
   });
   await file.write(new TextEncoder().encode(contents));
   await file.close();

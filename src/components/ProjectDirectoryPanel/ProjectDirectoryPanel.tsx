@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
-import { open } from "@tauri-apps/plugin-shell";
+import { isTauri, httpApi } from "../../lib/api";
 import type { Project } from "../../types";
 
 interface DirEntry {
@@ -52,7 +51,20 @@ async function readDirectoryRecursive(
 ): Promise<DirEntry[]> {
   if (depth > maxDepth) return [];
   try {
-    const entries = await readDir(path);
+    let entries: Array<{ name: string; isDirectory: boolean; isFile: boolean }>;
+    if (isTauri()) {
+      const fs = await import("@tauri-apps/plugin-fs");
+      entries = (await fs.readDir(path)).map((e: any) => ({
+        name: e.name,
+        isDirectory: e.isDirectory,
+        isFile: e.isFile,
+      }));
+    } else {
+      entries = await httpApi.post<Array<{ name: string; isDirectory: boolean; isFile: boolean }>>(
+        "/api/fs/read-dir",
+        { path }
+      );
+    }
     const results: DirEntry[] = [];
     for (const entry of entries) {
       const isDir = entry.isDirectory;
@@ -268,11 +280,12 @@ export function ProjectDirectoryPanel({
 
   const handleOpenInEditor = useCallback(
     async (relativePath: string) => {
-      if (!project) return;
+      if (!project || !isTauri()) return;
       const root = project.path.replace(/\\/g, "/").replace(/\/$/, "");
       const fullPath = `${root}/${relativePath}`;
       try {
-        await open(fullPath);
+        const shell = await import("@tauri-apps/plugin-shell");
+        await shell.open(fullPath);
       } catch (error) {
         console.error("Failed to open file:", error);
       }
@@ -289,7 +302,14 @@ export function ProjectDirectoryPanel({
       setPreviewLoading(true);
       setContextMenu(null);
       try {
-        const content = await readTextFile(fullPath);
+        let content: string;
+        if (isTauri()) {
+          const fs = await import("@tauri-apps/plugin-fs");
+          content = await fs.readTextFile(fullPath);
+        } else {
+          const result = await httpApi.post<{ contents: string }>("/api/fs/read-text-file", { path: fullPath });
+          content = result.contents;
+        }
         setPreview({ path: relativePath, name, content });
       } catch (error) {
         setPreview({ path: relativePath, name, content: `Error reading file: ${error instanceof Error ? error.message : String(error)}` });

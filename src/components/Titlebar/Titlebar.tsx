@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "../../lib/api";
 import { useSessionStore } from "../../store/sessionStore";
 
 interface TitlebarProps {
@@ -8,31 +8,54 @@ interface TitlebarProps {
 
 export function Titlebar({ sidebarCollapsed }: TitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
-  const appWindow = getCurrentWindow();
+  const [appWindow, setAppWindow] = useState<ReturnType<typeof import("@tauri-apps/api/window").getCurrentWindow> | null>(null);
   const runtimeInfo = useSessionStore((state) => state.runtimeInfo);
   const isMac = runtimeInfo?.os === "macos";
 
   useEffect(() => {
+    if (!isTauri()) return;
     let mounted = true;
 
-    const syncMaximized = async () => {
-      const maximized = await appWindow.isMaximized();
-      if (mounted) {
-        setIsMaximized(maximized);
-      }
-    };
+    const init = async () => {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const win = getCurrentWindow();
+      if (!mounted) return;
+      setAppWindow(win);
 
-    void syncMaximized();
+      const syncMaximized = async () => {
+        const maximized = await win.isMaximized();
+        if (mounted) {
+          setIsMaximized(maximized);
+        }
+      };
 
-    const unlistenPromise = appWindow.onResized(() => {
       void syncMaximized();
-    });
 
-    return () => {
-      mounted = false;
-      void unlistenPromise.then((unlisten) => unlisten());
+      const unlistenPromise = win.onResized(() => {
+        void syncMaximized();
+      });
+
+      return () => {
+        mounted = false;
+        void unlistenPromise.then((unlisten) => unlisten());
+      };
     };
-  }, [appWindow]);
+
+    const cleanupPromise = init();
+    return () => {
+      void cleanupPromise.then((cleanup) => cleanup?.());
+    };
+  }, []);
+
+  const handleClose = () => {
+    if (appWindow) void appWindow.close();
+  };
+  const handleMinimize = () => {
+    if (appWindow) void appWindow.minimize();
+  };
+  const handleToggleMaximize = () => {
+    if (appWindow) void appWindow.toggleMaximize();
+  };
 
   return (
     <header
@@ -51,18 +74,18 @@ export function Titlebar({ sidebarCollapsed }: TitlebarProps) {
         )}
       </div>
       <div className="flex items-center gap-3 shrink-0">
-        {isMac && (
+        {isTauri() && isMac && (
           <div className="flex gap-2 mr-4 group">
-            <span className="w-3 h-3 rounded-full bg-[#e63b2e] border border-[#1a1a1a] cursor-pointer hover:brightness-110" onClick={() => void appWindow.close()}></span>
-            <span className="w-3 h-3 rounded-full bg-[#ffcc00] border border-[#1a1a1a] cursor-pointer hover:brightness-110" onClick={() => void appWindow.minimize()}></span>
-            <span className="w-3 h-3 rounded-full bg-[#00ff00] border border-[#1a1a1a] cursor-pointer hover:brightness-110" onClick={() => void appWindow.toggleMaximize()}></span>
+            <span className="w-3 h-3 rounded-full bg-[#e63b2e] border border-[#1a1a1a] cursor-pointer hover:brightness-110" onClick={handleClose}></span>
+            <span className="w-3 h-3 rounded-full bg-[#ffcc00] border border-[#1a1a1a] cursor-pointer hover:brightness-110" onClick={handleMinimize}></span>
+            <span className="w-3 h-3 rounded-full bg-[#00ff00] border border-[#1a1a1a] cursor-pointer hover:brightness-110" onClick={handleToggleMaximize}></span>
           </div>
         )}
-        {!isMac && (
+        {isTauri() && !isMac && (
           <>
-            <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={() => void appWindow.minimize()}>minimize</span>
-            <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={() => void appWindow.toggleMaximize()}>{isMaximized ? "restore_page" : "maximize"}</span>
-            <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#e63b2e] hover:text-white p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-white" onClick={() => void appWindow.close()}>close</span>
+            <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={handleMinimize}>minimize</span>
+            <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#ffcc00] p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a]" onClick={handleToggleMaximize}>{isMaximized ? "restore_page" : "maximize"}</span>
+            <span className="material-symbols-outlined cursor-pointer rounded-none hover:bg-[#e63b2e] hover:text-white p-1 border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8] dark:hover:text-white" onClick={handleClose}>close</span>
           </>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../lib/api";
 import type { ProcessInfo, SystemHealth } from "../../types";
 
 interface ResourceMonitorPanelProps {

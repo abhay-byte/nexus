@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { readFile } from "@tauri-apps/plugin-fs";
+import { invoke } from "../../lib/api";
+import { isTauri } from "../../lib/api";
 import type { Project } from "../../types";
 
 // ── Resizable panel wrapper (shared chrome) ─────────────────────────────────
@@ -262,10 +262,12 @@ const FilePreview = memo(function FilePreview({
     setError(null);
 
     const load = async () => {
+      if (!isTauri()) return;
       try {
         const root = projectPath.replace(/[\\/]+$/, "");
         const fullPath = `${root}/${file.path}`;
-        const bytes = await readFile(fullPath);
+        const fs = await import("@tauri-apps/plugin-fs");
+        const bytes = await fs.readFile(fullPath);
         if (cancelled) return;
         const blob = new Blob([bytes]);
         const url = URL.createObjectURL(blob);

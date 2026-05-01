@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { isTauri } from "../../lib/api";
 import {
   CAVEMAN_ONE_CLICK_AGENT_IDS,
   DEFAULT_AGENCY_AGENT_SLUG,
@@ -165,6 +165,8 @@ export function AddProjectDialog({
   const [agencyFetched, setAgencyFetched] = useState(false);
 
   const [mcpPresetServerIds, setMcpPresetServerIds] = useState<Set<string>>(new Set());
+  const pngInputRef = useRef<HTMLInputElement>(null);
+  const dirInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!draft.icon) {
@@ -181,7 +183,13 @@ export function AddProjectDialog({
   }, [draft.icon]);
 
   const pickDirectory = async () => {
-    const selected = await open({
+    if (!isTauri()) {
+      // Browser mode: trigger hidden directory input
+      dirInputRef.current?.click();
+      return;
+    }
+    const dialog = await import("@tauri-apps/plugin-dialog");
+    const selected = await dialog.open({
       directory: true,
       multiple: false,
       title: "Select a project folder",
@@ -194,8 +202,33 @@ export function AddProjectDialog({
     }));
   };
 
+  const handleDirFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    // webkitRelativePath looks like "foldername/subdir/file.txt"
+    const firstPath = files[0].webkitRelativePath;
+    const folderName = firstPath.split("/")[0];
+
+    // Set a reasonable default absolute path
+    const defaultPath = `/home/abhay/repos/${folderName}`;
+    setDraft((current) => ({
+      ...current,
+      path: defaultPath,
+      name: current.name || folderName,
+    }));
+
+    event.target.value = ""; // reset so same folder can be picked again
+  };
+
   const pickIcon = async () => {
-    const selected = await open({
+    if (!isTauri()) {
+      // Browser mode: trigger hidden file input
+      pngInputRef.current?.click();
+      return;
+    }
+    const dialog = await import("@tauri-apps/plugin-dialog");
+    const selected = await dialog.open({
       directory: false,
       multiple: false,
       title: "Select a PNG icon",
@@ -203,6 +236,18 @@ export function AddProjectDialog({
     });
     if (typeof selected !== "string") return;
     setDraft((current) => ({ ...current, icon: selected }));
+  };
+
+  const handlePngFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setDraft((current) => ({ ...current, icon: dataUrl }));
+    };
+    reader.readAsDataURL(file);
+    event.target.value = ""; // reset so same file can be picked again
   };
 
   const clearIcon = () => {
@@ -335,6 +380,13 @@ export function AddProjectDialog({
               >
                 BROWSE
               </button>
+              <input
+                ref={dirInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleDirFileChange}
+                {...{ webkitdirectory: "true", directory: "true" } as any}
+              />
             </div>
           </div>
 
@@ -394,6 +446,13 @@ export function AddProjectDialog({
                 >
                   Pick PNG
                 </button>
+                <input
+                  ref={pngInputRef}
+                  type="file"
+                  accept="image/png"
+                  className="hidden"
+                  onChange={handlePngFileChange}
+                />
                 {draft.icon && (
                   <button
                     className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] px-4 py-2 font-black uppercase text-xs hover:bg-[#e63b2e] hover:text-white hover:border-[#e63b2e] transition-all"

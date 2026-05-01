@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
-import { open } from "@tauri-apps/plugin-dialog";
+import { isTauri } from "../../lib/api";
 import { KNOWN_AGENTS, PROJECT_SWATCHES } from "../../constants/agents";
 import {
   MCP_AUTO_INSTALL_AGENT_IDS,
@@ -731,7 +731,9 @@ function ProjectsPanel({
   }, [selectedProject?.icon]);
 
   const handlePickIcon = async () => {
-    const file = await open({ multiple: false, filters: [{ name: "Image", extensions: ["png"] }] });
+    if (!isTauri()) return;
+    const dialog = await import("@tauri-apps/plugin-dialog");
+    const file = await dialog.open({ multiple: false, filters: [{ name: "Image", extensions: ["png"] }] });
     if (!file || Array.isArray(file)) return;
     const dataUrl = await getImageDataUrl(file);
     setIconPreview(dataUrl);

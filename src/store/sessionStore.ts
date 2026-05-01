@@ -1,5 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
+import { listen, invoke, isTauri, wsSpawn, wsWrite, wsResize, wsKill } from "../lib/api";
 import { nanoid } from "nanoid";
 import { create } from "zustand";
 import { KNOWN_AGENTS } from "../constants/agents";
@@ -593,16 +592,29 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
         : args;
 
       await ensureSessionEventBridge(sessionId);
-      await invokeSafely<string>("spawn_pty", {
-        sessionId,
-        command: spawnCommand,
-        args: spawnArgs,
-        cwd: remote ? "" : agent.cwdOverride?.trim() || project.path,
-        env,
-        cols: 120,
-        rows: 32,
-        shellOverride: get().settings.shellOverride,
-      });
+      if (isTauri()) {
+        await invokeSafely<string>("spawn_pty", {
+          sessionId,
+          command: spawnCommand,
+          args: spawnArgs,
+          cwd: remote ? "" : agent.cwdOverride?.trim() || project.path,
+          env,
+          cols: 120,
+          rows: 32,
+          shellOverride: get().settings.shellOverride,
+        });
+      } else {
+        await wsSpawn({
+          sessionId,
+          command: spawnCommand,
+          args: spawnArgs,
+          cwd: remote ? "" : agent.cwdOverride?.trim() || project.path,
+          env,
+          cols: 120,
+          rows: 32,
+          shellOverride: get().settings.shellOverride,
+        });
+      }
 
       get().markSessionStatus(sessionId, "running");
     } catch (error) {
@@ -686,18 +698,33 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
     try {
       const remote = parseRemoteProjectPath(project.path);
       await ensureSessionEventBridge(sessionId);
-      await invokeSafely<string>("spawn_pty", {
-        sessionId,
-        command: remote ? "ssh" : "",
-        args: remote
-          ? [remote.host, "-t", `cd ${shellEscape(remote.remotePath)} && $SHELL`]
-          : [],
-        cwd: remote ? "" : project.path,
-        env: {},
-        cols: 120,
-        rows: 32,
-        shellOverride: get().settings.shellOverride,
-      });
+      if (isTauri()) {
+        await invokeSafely<string>("spawn_pty", {
+          sessionId,
+          command: remote ? "ssh" : "",
+          args: remote
+            ? [remote.host, "-t", `cd ${shellEscape(remote.remotePath)} && $SHELL`]
+            : [],
+          cwd: remote ? "" : project.path,
+          env: {},
+          cols: 120,
+          rows: 32,
+          shellOverride: get().settings.shellOverride,
+        });
+      } else {
+        await wsSpawn({
+          sessionId,
+          command: remote ? "ssh" : "",
+          args: remote
+            ? [remote.host, "-t", `cd ${shellEscape(remote.remotePath)} && $SHELL`]
+            : [],
+          cwd: remote ? "" : project.path,
+          env: {},
+          cols: 120,
+          rows: 32,
+          shellOverride: get().settings.shellOverride,
+        });
+      }
 
       get().markSessionStatus(sessionId, "running");
     } catch (error) {
@@ -801,17 +828,18 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       },
     })),
   resizeSession: async (sessionId, cols, rows) => {
-    await invokeSafely("resize_pty", {
-      sessionId,
-      cols,
-      rows,
-    });
+    if (isTauri()) {
+      await invokeSafely("resize_pty", { sessionId, cols, rows });
+    } else {
+      wsResize(sessionId, cols, rows);
+    }
   },
   writeToSession: async (sessionId, data) => {
-    await invokeSafely("write_pty", {
-      sessionId,
-      data: Array.from(data),
-    });
+    if (isTauri()) {
+      await invokeSafely("write_pty", { sessionId, data: Array.from(data) });
+    } else {
+      wsWrite(sessionId, data);
+    }
   },
   markSessionStatus: (sessionId, status) =>
     set((state) => ({
@@ -827,7 +855,11 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
     })),
   killSession: async (projectId, sessionId) => {
     try {
-      await invokeSafely("kill_pty", { sessionId });
+      if (isTauri()) {
+        await invokeSafely("kill_pty", { sessionId });
+      } else {
+        wsKill(sessionId);
+      }
     } catch {
       // Ignore backend kill failures and clean up frontend state anyway.
     }

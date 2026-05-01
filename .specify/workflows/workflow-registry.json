@@ -8,6 +8,14 @@
       "source": "bundled",
       "installed_at": "2026-04-14T16:47:34.148104+00:00",
       "updated_at": "2026-04-14T16:47:34.148110+00:00"
+    },
+    "release": {
+      "name": "Release Pipeline",
+      "version": "1.0.0",
+      "description": "Version bump, build, package, tag, and publish GitHub release for Nexus",
+      "source": ".specify/workflows/release.md",
+      "installed_at": "2026-04-27T22:20:00.000000+00:00",
+      "updated_at": "2026-04-27T22:20:00.000000+00:00"
     }
   }
 }

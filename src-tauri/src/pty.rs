@@ -254,7 +254,7 @@ pub struct SystemHealth {
 }
 
 #[tauri::command]
-pub fn system_health(state: State<'_, AppState>) -> SystemHealth {
+pub fn system_health_inner(state: &AppState) -> SystemHealth {
     let mut sys = state.sys.lock().unwrap();
     sys.refresh_cpu_usage();
     sys.refresh_memory();
@@ -270,6 +270,11 @@ pub fn system_health(state: State<'_, AppState>) -> SystemHealth {
     }
 }
 
+#[tauri::command]
+pub fn system_health(state: State<'_, AppState>) -> SystemHealth {
+    system_health_inner(&state)
+}
+
 #[derive(Serialize, Clone)]
 pub struct ProcessInfo {
     pub pid: u32,
@@ -278,8 +283,7 @@ pub struct ProcessInfo {
     pub memory_mb: f64,
 }
 
-#[tauri::command]
-pub fn list_processes(state: State<'_, AppState>) -> Vec<ProcessInfo> {
+pub fn list_processes_inner(state: &AppState) -> Vec<ProcessInfo> {
     let mut sys = state.sys.lock().unwrap();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     sys.refresh_cpu_usage();
@@ -302,6 +306,11 @@ pub fn list_processes(state: State<'_, AppState>) -> Vec<ProcessInfo> {
 }
 
 #[tauri::command]
+pub fn list_processes(state: State<'_, AppState>) -> Vec<ProcessInfo> {
+    list_processes_inner(&state)
+}
+
+#[tauri::command]
 pub fn kill_process(pid: u32) -> Result<(), String> {
     use sysinfo::{Pid, Signal};
     let pid = Pid::from_u32(pid);
@@ -320,7 +329,7 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
 }
 
 
-fn default_shell(shell_override: Option<String>) -> String {
+pub fn default_shell(shell_override: Option<String>) -> String {
     if let Some(shell) = shell_override.filter(|value| !value.trim().is_empty()) {
         return shell;
     }
@@ -661,32 +670,40 @@ pub async fn spawn_pty(
 }
 
 #[tauri::command]
-pub fn write_pty(
-    session_id: String,
-    data: Vec<u8>,
-    state: State<'_, AppState>,
+pub fn write_pty_inner(
+    session_id: &str,
+    data: &[u8],
+    state: &AppState,
 ) -> Result<(), String> {
     let sessions = state.sessions.lock().map_err(|error| error.to_string())?;
     let session = sessions
-        .get(&session_id)
+        .get(session_id)
         .ok_or_else(|| format!("No PTY session found for {session_id}"))?;
     let mut writer = session.writer.lock().map_err(|error| error.to_string())?;
 
-    writer.write_all(&data).map_err(|error| error.to_string())?;
+    writer.write_all(data).map_err(|error| error.to_string())?;
     writer.flush().map_err(|error| error.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn resize_pty(
+pub fn write_pty(
     session_id: String,
+    data: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    write_pty_inner(&session_id, &data, &state)
+}
+
+pub fn resize_pty_inner(
+    session_id: &str,
     cols: u16,
     rows: u16,
-    state: State<'_, AppState>,
+    state: &AppState,
 ) -> Result<(), String> {
     let sessions = state.sessions.lock().map_err(|error| error.to_string())?;
     let session = sessions
-        .get(&session_id)
+        .get(session_id)
         .ok_or_else(|| format!("No PTY session found for {session_id}"))?;
     let master = session.master.lock().map_err(|error| error.to_string())?;
 
@@ -701,10 +718,19 @@ pub fn resize_pty(
 }
 
 #[tauri::command]
-pub fn kill_pty(session_id: String, state: State<'_, AppState>) -> Result<(), String> {
+pub fn resize_pty(
+    session_id: String,
+    cols: u16,
+    rows: u16,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    resize_pty_inner(&session_id, cols, rows, &state)
+}
+
+pub fn kill_pty_inner(session_id: &str, state: &AppState) -> Result<(), String> {
     let session = {
         let mut sessions = state.sessions.lock().map_err(|error| error.to_string())?;
-        sessions.remove(&session_id)
+        sessions.remove(session_id)
     };
 
     let Some(session) = session else {
@@ -712,7 +738,14 @@ pub fn kill_pty(session_id: String, state: State<'_, AppState>) -> Result<(), St
     };
 
     let mut child = session.child.lock().map_err(|error| error.to_string())?;
-    child.kill().map_err(|error| error.to_string())
+    let _ = child.kill();
+    let _ = child.wait();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn kill_pty(session_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    kill_pty_inner(&session_id, &state)
 }
 
 // ─── Git diff structures ────────────────────────────────────────────────────

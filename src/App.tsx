@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { exists, readTextFile } from "@tauri-apps/plugin-fs";
+import { invoke } from "./lib/api";
+import { isTauri } from "./lib/api";
 import { PaneGrid } from "./components/PaneGrid/PaneGrid";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { StatusBar } from "./components/StatusBar/StatusBar";
@@ -38,9 +37,11 @@ function isRemoteProjectPath(path: string) {
 }
 
 async function readAgencyManifestSlug(projectPath: string) {
+  if (!isTauri()) return null;
   try {
     const root = projectPath.replace(/[\\/]+$/, "");
-    const contents = await readTextFile(`${root}/.nexus/agency-agents.json`);
+    const fs = await import("@tauri-apps/plugin-fs");
+    const contents = await fs.readTextFile(`${root}/.nexus/agency-agents.json`);
     const parsed = JSON.parse(contents) as { slug?: unknown };
     return typeof parsed.slug === "string" ? parsed.slug : null;
   } catch {
@@ -280,20 +281,21 @@ function App() {
 
   // Register keyboard shortcuts ONCE.
   useEffect(() => {
-    if (!bootstrapped || !sessionInitialized) {
+    if (!bootstrapped || !sessionInitialized || !isTauri()) {
       return;
     }
 
-    const appWindow = getCurrentWindow();
+    const appWindow = import("@tauri-apps/api/window").then((m) => m.getCurrentWindow());
     const kb = settings.keybindings ?? {};
 
-    const onKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = async (event: KeyboardEvent) => {
       const { activeProject: proj, activePaneIds: paneIds, openProjectIds: openIds, activeProjectId: activeProjId, layouts: lays } = shortcutStateRef.current;
 
       // Application shortcuts
       if (matchesKeybinding(event, kb.quit)) {
         event.preventDefault();
-        void appWindow.close();
+        const win = await appWindow;
+        void win.close();
         return;
       }
 
@@ -501,9 +503,10 @@ function App() {
         }
 
         const root = project.path.replace(/[\\/]+$/, "");
+        const fs = isTauri() ? await import("@tauri-apps/plugin-fs") : null;
         const [hasAgencyFile, hasLegacyAgencyFile, manifestSlug] = await Promise.all([
-          exists(`${root}/AGENCY.md`),
-          exists(`${root}/.nexus/agency-agent.md`),
+          fs ? fs.exists(`${root}/AGENCY.md`) : Promise.resolve(false),
+          fs ? fs.exists(`${root}/.nexus/agency-agent.md`) : Promise.resolve(false),
           readAgencyManifestSlug(project.path),
         ]);
 
