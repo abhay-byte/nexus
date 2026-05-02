@@ -1,7 +1,7 @@
 /* Mobile Portrait Overrides — Bauhaus Brutalist */
 /* Only applies to narrow phone portrait (≈9:21 and similar) */
 
-@media (max-width: 480px) and (orientation: portrait) {
+@media (max-width: 640px) {
   /* ── App shell ── */
   .nexus-app {
     flex-direction: column !important;
