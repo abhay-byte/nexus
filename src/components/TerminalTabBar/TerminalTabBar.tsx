@@ -15,6 +15,7 @@ interface TerminalTabBarProps {
   onSelectTab: (tabId: string) => void;
   onAddTab: () => void;
   onCloseTab: (tabId: string) => void;
+  onToggleSidebar?: () => void;
   onSplitHorizontal?: () => void;
   onSplitVertical?: () => void;
   gitStatus?: { count: number; branch: string } | null;
@@ -263,6 +264,7 @@ export function TerminalTabBar({
   onToggleProjectPanel,
   onToggleResourceMonitor,
   resourceMonitorActive,
+  onToggleSidebar,
   agencyAgent,
   onUpdateAgencyAgent,
   onListAgencyAgents,
@@ -274,6 +276,18 @@ export function TerminalTabBar({
     <div className="nexus-tabbar flex items-center bg-[#1a1a1a] dark:bg-[#0d0d0d] border-b-2 border-[#333] shrink-0">
       {/* Left: scrollable tabs area */}
       <div className="flex items-center overflow-x-auto scrollbar-none min-w-0">
+        {/* Mobile hamburger */}
+        {onToggleSidebar && (
+          <button
+            className="nexus-mobile-only flex items-center justify-center px-3 py-1.5 text-[#ffcc00] hover:text-white hover:bg-[#252525] transition-colors shrink-0 border-none bg-transparent cursor-pointer"
+            onClick={onToggleSidebar}
+            title="Menu"
+            type="button"
+          >
+            <span className="material-symbols-outlined text-lg">menu</span>
+          </button>
+        )}
+
         {/* Project panel toggle — before Kanban */}
         {onToggleProjectPanel && (
           <button

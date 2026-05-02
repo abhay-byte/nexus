@@ -562,15 +562,6 @@ function App() {
           aria-hidden="true"
         />
       )}
-      {/* Mobile hamburger */}
-      <button
-        className="nexus-mobile-only fixed top-16 left-2 z-[110] bg-[#ffcc00] text-[#1a1a1a] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] w-10 h-10 flex items-center justify-center font-black text-lg shadow-[4px_4px_0px_0px_#1a1a1a]"
-        onClick={toggleSidebar}
-        type="button"
-        title="Menu"
-      >
-        <span className="material-symbols-outlined">menu</span>
-      </button>
       <div className={`flex flex-1 overflow-hidden ${sidebarCollapsed ? "pt-10" : "pt-16"}`}>
         <Sidebar
           projects={projects}
@@ -628,6 +619,7 @@ function App() {
                         onSelectTab={(tabId) => setActiveTerminalTab(project.id, tabId)}
                         onAddTab={() => addTerminalTab(project.id)}
                         onCloseTab={(tabId) => closeTerminalTab(project.id, tabId)}
+                        onToggleSidebar={toggleSidebar}
                         onSplitHorizontal={() => splitPane(project.id, "horizontal")}
                         onSplitVertical={() => splitPane(project.id, "vertical")}
                         gitStatus={gitStatus}

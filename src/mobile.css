@@ -55,9 +55,7 @@
     height: auto;
     min-height: 40px;
   }
-  .nexus-tabbar .nexus-tabbar-right {
-    display: none; /* Hide split/resource buttons on mobile */
-  }
+  /* Tab bar right buttons are allowed to wrap on mobile */
 
   /* ── Kanban board ── */
   .nexus-kanban-columns {
