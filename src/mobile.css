@@ -1,7 +1,7 @@
 /* Mobile Portrait Overrides — Bauhaus Brutalist */
-/* Only applies below 768px (Tailwind md breakpoint) */
+/* Only applies to narrow phone portrait (≈9:21 and similar) */
 
-@media (max-width: 767px) {
+@media (max-width: 480px) and (orientation: portrait) {
   /* ── App shell ── */
   .nexus-app {
     flex-direction: column !important;
@@ -55,7 +55,6 @@
     height: auto;
     min-height: 40px;
   }
-  /* Tab bar right buttons are allowed to wrap on mobile */
 
   /* ── Kanban board ── */
   .nexus-kanban-columns {
@@ -143,17 +142,17 @@
     overflow-x: auto;
     display: block;
   }
-}
 
-/* Always hide mobile-only elements on desktop */
-.nexus-mobile-only {
-  display: none;
-}
-@media (max-width: 767px) {
+  /* Show/hide helpers inside media query */
   .nexus-mobile-only {
     display: flex;
   }
   .nexus-desktop-only {
     display: none !important;
   }
+}
+
+/* Always hide mobile-only elements on desktop */
+.nexus-mobile-only {
+  display: none;
 }
