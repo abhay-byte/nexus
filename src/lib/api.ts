@@ -82,7 +82,11 @@ export const httpApi = {
 const wsListeners = new Map<string, Set<(payload: unknown) => void>>();
 let sharedWs: WebSocket | null = null;
 let sharedWsReady = false;
-let wsSessionId: string | null = null; // Track current session for routing
+
+function base64Encode(bytes: Uint8Array): string {
+  const binString = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+  return btoa(binString);
+}
 
 function ensureSharedWs(): WebSocket {
   if (sharedWs?.readyState === WebSocket.OPEN) return sharedWs;
@@ -99,14 +103,11 @@ function ensureSharedWs(): WebSocket {
 
   sharedWs.onmessage = (e) => {
     if (e.data instanceof ArrayBuffer) {
-      // Binary PTY output — route to the specific pty-output listener
-      const data = new Uint8Array(e.data);
-      const key = wsSessionId ? `pty-output:${wsSessionId}` : null;
-      if (key) {
-        const cbs = wsListeners.get(key);
-        cbs?.forEach((cb) => cb(Array.from(data)));
-      }
-    } else if (typeof e.data === "string") {
+      // Backend now sends PTY output as JSON text with session_id.
+      // Legacy binary frames are ignored.
+      return;
+    }
+    if (typeof e.data === "string") {
       try {
         const parsed = JSON.parse(e.data);
         if (parsed.event === "exit" && parsed.session_id) {
@@ -115,9 +116,16 @@ function ensureSharedWs(): WebSocket {
         } else if (parsed.event === "spawned" && parsed.session_id) {
           const cbs = wsListeners.get(`pty-spawned:${parsed.session_id}`);
           cbs?.forEach((cb) => cb(undefined));
+        } else if (parsed.event === "pty-output" && parsed.session_id && parsed.data) {
+          const cbs = wsListeners.get(`pty-output:${parsed.session_id}`);
+          if (cbs) {
+            const binString = atob(parsed.data);
+            const bytes = Uint8Array.from(binString, (m) => m.charCodeAt(0));
+            cbs.forEach((cb) => cb(Array.from(bytes)));
+          }
         }
       } catch {
-        // ignore
+        // ignore malformed JSON
       }
     }
   };
@@ -141,9 +149,8 @@ export function wsSpawn(opts: {
   rows?: number;
   shellOverride?: string;
 }): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const ws = ensureSharedWs();
-    wsSessionId = opts.sessionId;
 
     const sendSpawn = () => {
       ws.send(
@@ -174,7 +181,7 @@ export function wsSpawn(opts: {
 
     // Safety timeout — should never hit since we resolve after send
     setTimeout(() => {
-      resolve(); // Don't reject, just resolve anyway
+      resolve();
     }, 3000);
   });
 }
@@ -183,7 +190,13 @@ export function wsSpawn(opts: {
 export function wsWrite(sessionId: string, data: Uint8Array): void {
   const ws = ensureSharedWs();
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(data);
+    ws.send(
+      JSON.stringify({
+        type: "write",
+        session_id: sessionId,
+        data: base64Encode(data),
+      })
+    );
   }
 }
 

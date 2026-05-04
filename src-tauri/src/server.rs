@@ -145,7 +145,64 @@ fn build_allowlist() -> Vec<IpAddr> {
 }
 
 fn is_allowed_ip(remote: &SocketAddr, allowed: &[IpAddr]) -> bool {
-    allowed.contains(&remote.ip())
+    let remote_ip = remote.ip();
+    
+    // Check exact match first (for localhost)
+    if allowed.contains(&remote_ip) {
+        return true;
+    }
+    
+    // Check if remote IP is in the same subnet as any allowed IP
+    for allowed_ip in allowed {
+        match (allowed_ip, remote_ip) {
+            (std::net::IpAddr::V4(allowed_v4), std::net::IpAddr::V4(remote_v4)) => {
+                // Allow if in the same /24 subnet (192.168.1.x)
+                let allowed_bytes = allowed_v4.octets();
+                let remote_bytes = remote_v4.octets();
+                if allowed_bytes[0..3] == remote_bytes[0..3] {
+                    // Exclude loopback and link-local
+                    if !remote_v4.is_loopback() && !remote_v4.is_link_local() {
+                        return true;
+                    }
+                }
+                // Also allow entire 192.168.x.x and 10.x.x.x and 172.16.x.x-172.31.x.x ranges
+                if is_private_ipv4(remote_v4) {
+                    return true;
+                }
+            }
+            (std::net::IpAddr::V6(allowed_v6), std::net::IpAddr::V6(remote_v6)) => {
+                // For IPv6, allow if they're in the same /64 subnet
+                let allowed_bytes = allowed_v6.octets();
+                let remote_bytes = remote_v6.octets();
+                if allowed_bytes[0..8] == remote_bytes[0..8] {
+                    // Exclude loopback and link-local
+                    if !remote_v6.is_loopback() {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    
+    false
+}
+
+fn is_private_ipv4(ip: std::net::Ipv4Addr) -> bool {
+    let bytes = ip.octets();
+    // 192.168.0.0/16
+    if bytes[0] == 192 && bytes[1] == 168 {
+        return true;
+    }
+    // 10.0.0.0/8
+    if bytes[0] == 10 {
+        return true;
+    }
+    // 172.16.0.0/12
+    if bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31 {
+        return true;
+    }
+    false
 }
 
 /// ─── Static File Serving ───────────────────────────────────────────────────

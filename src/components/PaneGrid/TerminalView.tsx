@@ -162,8 +162,13 @@ export function TerminalView({
     });
 
     // Wait for fonts to load before fitting so cell dimensions are correct.
+    // Use document.fonts.load() with the specific font to avoid hanging on
+    // mobile browsers when fallback fonts are unavailable.
     const initialFitTimer = setTimeout(() => {
-      void document.fonts.ready.then(() => {
+      void document.fonts.load(`${fontSize + paneZoom}px "${fontFamily}"`).then(() => {
+        doFit();
+      }).catch(() => {
+        // Even if font loading fails, fit with whatever is available
         doFit();
       });
     }, 50);

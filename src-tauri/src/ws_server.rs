@@ -1,4 +1,5 @@
 use crate::{pty, state::AppState};
+use base64::Engine as _;
 use futures::{SinkExt, StreamExt};
 use std::{
     collections::HashMap,
@@ -45,6 +46,12 @@ impl WsState {
         if let Some(tx) = self.get(session_id) {
             let msg = serde_json::json!({"event": event, "payload": payload});
             let _ = tx.send(Message::Text(msg.to_string()));
+        }
+    }
+
+    pub fn send_text(&self, session_id: &str, text: String) {
+        if let Some(tx) = self.get(session_id) {
+            let _ = tx.send(Message::Text(text));
         }
     }
 }
@@ -112,10 +119,14 @@ async fn handle_ws_connection(
                 if let Ok(cmd) = serde_json::from_str::<WsCommand>(&text) {
                     match cmd {
                         WsCommand::Spawn { session_id, command, args, cwd, env, cols, rows, shell_override } => {
-                            // Kill existing session with same ID
-                            if let Some(old) = current_session.take() {
-                                let _ = pty::kill_pty_inner(&old, &app_state);
-                                ws_state.unregister(&old);
+                            // Allow multiple sessions per connection — do NOT kill previous sessions.
+                            // Only clean up if the same session_id is being respawned.
+                            if let Some(ref old) = current_session {
+                                if old == &session_id {
+                                    let _ = pty::kill_pty_inner(old, &app_state);
+                                    ws_state.unregister(old);
+                                    current_session = None;
+                                }
                             }
 
                             match spawn_pty_ws(
@@ -288,20 +299,34 @@ pub fn spawn_pty_ws(
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => {
+                    let msg = serde_json::json!({
+                        "event": "exit",
+                        "session_id": reader_session_id
+                    }).to_string();
                     if let Ok(w) = ws.lock() {
-                        w.send_json(&reader_session_id, "exit", serde_json::Value::Null);
+                        w.send_text(&reader_session_id, msg);
                     }
                     break;
                 }
                 Ok(size) => {
                     let payload = buffer[..size].to_vec();
                     if let Ok(w) = ws.lock() {
-                        w.send_binary(&reader_session_id, payload);
+                        let base64_data = base64::engine::general_purpose::STANDARD.encode(&payload);
+                        let msg = serde_json::json!({
+                            "event": "pty-output",
+                            "session_id": reader_session_id,
+                            "data": base64_data
+                        }).to_string();
+                        w.send_text(&reader_session_id, msg);
                     }
                 }
                 Err(_) => {
+                    let msg = serde_json::json!({
+                        "event": "exit",
+                        "session_id": reader_session_id
+                    }).to_string();
                     if let Ok(w) = ws.lock() {
-                        w.send_json(&reader_session_id, "exit", serde_json::Value::Null);
+                        w.send_text(&reader_session_id, msg);
                     }
                     break;
                 }

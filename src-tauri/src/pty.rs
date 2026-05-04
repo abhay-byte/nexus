@@ -995,8 +995,21 @@ fn collect_git_diff_metadata(
     Ok((branch, file_map, status_map))
 }
 
+fn validate_git_cwd(cwd: &str) -> Result<(), String> {
+    let path = Path::new(cwd);
+    if !path.exists() {
+        return Err(format!("Directory does not exist: {}", cwd));
+    }
+    if !path.is_dir() {
+        return Err(format!("Path is not a directory: {}", cwd));
+    }
+    ensure_command_exists("git")?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
+    validate_git_cwd(&cwd)?;
     let (branch, file_map, status_map) = collect_git_diff_metadata(&cwd)?;
 
     let mut files: Vec<GitChangedFile> = Vec::new();
@@ -1031,6 +1044,7 @@ pub fn git_diff(cwd: String) -> Result<GitDiffResult, String> {
 
 #[tauri::command]
 pub fn git_diff_file(cwd: String, path: String) -> Result<GitChangedFile, String> {
+    validate_git_cwd(&cwd)?;
     let (_, file_map, status_map) = collect_git_diff_metadata(&cwd)?;
     let (additions, deletions, is_binary) = file_map.get(&path).copied().unwrap_or((0, 0, false));
     let status = status_map
@@ -1057,6 +1071,7 @@ pub struct GitBranch {
 
 #[tauri::command]
 pub fn git_branches(cwd: String) -> Result<Vec<GitBranch>, String> {
+    validate_git_cwd(&cwd)?;
     let output = std::process::Command::new("git")
         .args(["branch", "-a", "--format=%(refname:short)|%(HEAD)"])
         .current_dir(&cwd)
@@ -1086,6 +1101,7 @@ pub fn git_branches(cwd: String) -> Result<Vec<GitBranch>, String> {
 
 #[tauri::command]
 pub fn git_checkout_branch(cwd: String, branch: String) -> Result<(), String> {
+    validate_git_cwd(&cwd)?;
     let output = std::process::Command::new("git")
         .args(["checkout", &branch])
         .current_dir(&cwd)
@@ -1107,6 +1123,7 @@ pub struct GitStatusSummary {
 
 #[tauri::command]
 pub fn git_status_count(cwd: String) -> Result<GitStatusSummary, String> {
+    validate_git_cwd(&cwd)?;
     let status_out = std::process::Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(&cwd)

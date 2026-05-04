@@ -59,6 +59,9 @@ fn get_local_ips() -> Vec<String> {
 }
 
 fn main() {
+    // Fix HOME / PATH so git and other CLI tools are discoverable in headless mode.
+    nexus::pty::fix_home_env();
+
     let http_port = std::env::var("NEXUS_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
