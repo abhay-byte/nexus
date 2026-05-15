@@ -4,6 +4,7 @@ version = "0.1.8"
 description = "Nexus multi-project AI agent workspace"
 authors = ["abhay"]
 edition = "2021"
+default-run = "nexus"
 
 [[bin]]
 name = "nexus"

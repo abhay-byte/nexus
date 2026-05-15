@@ -206,11 +206,13 @@ export function ProjectDirectoryPanel({
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  const projectPath = project?.path ?? null;
+
   const load = useCallback(async () => {
-    if (!project) return;
+    if (!projectPath) return;
     setLoading(true);
     try {
-      const root = project.path.replace(/\\/g, "/").replace(/\/$/, "");
+      const root = projectPath.replace(/\\/g, "/").replace(/\/$/, "");
       const result = await readDirectoryRecursive(root, 0, 3);
       setEntries(result);
     } catch {
@@ -218,13 +220,13 @@ export function ProjectDirectoryPanel({
     } finally {
       setLoading(false);
     }
-  }, [project]);
+  }, [projectPath]);
 
   useEffect(() => {
-    if (!collapsed && project) {
+    if (!collapsed && projectPath) {
       void load();
     }
-  }, [collapsed, project, load]);
+  }, [collapsed, projectPath, load]);
 
   const togglePath = useCallback(
     (path: string) => {

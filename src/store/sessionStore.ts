@@ -976,6 +976,25 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
   syncProjects: (projects) =>
     set((state) => {
       const validProjectIds = new Set(projects.map((project) => project.id));
+
+      // Check if anything actually needs to change before creating new objects.
+      // Without this guard, every call creates new object references via
+      // Object.fromEntries(), which triggers downstream effects that depend on
+      // sessions/layouts and causes an infinite re-render loop.
+      const currentProjectIds = new Set(
+        Object.keys(state.terminalTabs),
+      );
+      const allProjectsTracked = projects.every(
+        (p) => state.terminalTabs[p.id]?.length && state.activeTabIds[p.id],
+      );
+      const noStaleProjects = [...currentProjectIds].every((id) => validProjectIds.has(id));
+      const noStaleSessions = Object.values(state.sessions).every(
+        (session) => validProjectIds.has(session.projectId),
+      );
+      if (allProjectsTracked && noStaleProjects && noStaleSessions) {
+        return state;
+      }
+
       const terminalTabs = { ...state.terminalTabs };
       const activeTabIds = { ...state.activeTabIds };
 
