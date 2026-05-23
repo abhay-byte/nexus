@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
-import { isTauri } from "../../lib/api";
+import { API_BASE } from "../../lib/api";
+import { FilePicker } from "../FilePicker/FilePicker";
 import { KNOWN_AGENTS, PROJECT_SWATCHES } from "../../constants/agents";
 import {
   MCP_AUTO_INSTALL_AGENT_IDS,
@@ -730,14 +731,34 @@ function ProjectsPanel({
     return () => { cancelled = true; };
   }, [selectedProject?.icon]);
 
-  const handlePickIcon = async () => {
-    if (!isTauri()) return;
-    const dialog = await import("@tauri-apps/plugin-dialog");
-    const file = await dialog.open({ multiple: false, filters: [{ name: "Image", extensions: ["png"] }] });
-    if (!file || Array.isArray(file)) return;
-    const dataUrl = await getImageDataUrl(file);
-    setIconPreview(dataUrl);
-    patchProject({ icon: file });
+  const [showIconPicker, setShowIconPicker] = useState(false);
+
+  const handlePickIcon = () => {
+    setShowIconPicker(true);
+  };
+
+  const handleIconPickerSelect = async (path: string) => {
+    setShowIconPicker(false);
+    try {
+      const res = await fetch(`${API_BASE}/api/fs/read-file-base64`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      if (!res.ok) throw new Error("Failed to read image");
+      const { data_url } = await res.json() as { data_url: string };
+      setIconPreview(data_url);
+      patchProject({ icon: data_url });
+    } catch {
+      // fallback: store path and let getImageDataUrl resolve it
+      const dataUrl = await getImageDataUrl(path).catch(() => null);
+      if (dataUrl) {
+        setIconPreview(dataUrl);
+        patchProject({ icon: dataUrl });
+      } else {
+        patchProject({ icon: path });
+      }
+    }
   };
 
   const handleClearIcon = () => {
@@ -858,6 +879,7 @@ function ProjectsPanel({
   };
 
   return (
+    <>
     <div className="space-y-8">
       <SectionHeading accent="#ffcc00" label="Projects" />
 
@@ -1286,6 +1308,19 @@ function ProjectsPanel({
         </div>
       </div>
     </div>
+
+    {/* In-app icon picker — works in both web and Tauri/app mode */}
+    {showIconPicker && (
+      <FilePicker
+        title="Pick Icon"
+        initialPath="~"
+        allowFiles
+        allowedExtensions={["png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp"]}
+        onSelect={(path) => void handleIconPickerSelect(path)}
+        onClose={() => setShowIconPicker(false)}
+      />
+    )}
+    </>
   );
 }
 

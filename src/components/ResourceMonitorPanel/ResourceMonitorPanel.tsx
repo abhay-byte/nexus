@@ -127,7 +127,7 @@ export function ResourceMonitorPanel({
 
   return (
     <div
-      className="nexus-overlay-panel relative flex flex-col h-full bg-[#f5f0e8] dark:bg-[#1a1a1a] border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] shrink-0"
+      className="nexus-overlay-panel relative flex flex-col flex-1 min-h-0 bg-[#f5f0e8] dark:bg-[#1a1a1a] border-l-4 border-[#1a1a1a] dark:border-[#f5f0e8] shrink-0"
       style={{ width }}
     >
       {/* Resize handle on left edge */}

@@ -5,6 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useSessionStore } from "../../store/sessionStore";
 import { registerDirectWriter, unregisterDirectWriter } from "../../lib/directWriter";
+import { dbg, dbgCount } from "../../lib/debug";
 import type { Session } from "../../types";
 
 /** How often to clear the texture atlas to prevent glyph corruption (ms). */
@@ -153,10 +154,16 @@ export function TerminalView({
     // intermediate string accumulation, truncation, or delta computation.
     // The sessionLogs string still accumulates for search/export only.
     const decoder = new TextDecoder();
+    dbg('writer', `TerminalView mounting — registering directWriter for session=${session.id.slice(0,8)}`);
     registerDirectWriter(session.id, (chunk: Uint8Array) => {
-      if (!isTabActiveRef.current) return; // skip writes to hidden terminals
+      if (!isTabActiveRef.current) {
+        dbg('writer', `skipping write (tab hidden) session=${session.id.slice(0,8)} bytes=${chunk.byteLength}`);
+        return; // skip writes to hidden terminals
+      }
       const text = decoder.decode(chunk, { stream: true });
       if (text) {
+        dbgCount('directWrites');
+        dbg('writer', `✓ xterm.write session=${session.id.slice(0,8)} chars=${text.length}`);
         term.write(text);
       }
     });
@@ -275,6 +282,7 @@ export function TerminalView({
     container.addEventListener("drop", dropHandler);
 
     return () => {
+      dbg('writer', `TerminalView unmounting — unregistering directWriter for session=${session.id.slice(0,8)}`);
       unregisterDirectWriter(session.id);
       fitAddonRef.current = null;
       termRef.current = null;

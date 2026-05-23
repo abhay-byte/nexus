@@ -453,8 +453,11 @@ pub fn start_http_server(
         };
 
         // ── Handle Request ──
-        let mut response = if path.starts_with("/api/") {
-            handle_api(&method, &path, body, &state, &web_state, &ws_state)
+        // Note: json_response / json_error already call add_cors_headers internally,
+        // so we must NOT call add_cors_headers again here — duplicate
+        // Access-Control-Allow-Origin headers cause browsers to reject the response.
+        let response = if path.starts_with("/api/") {
+            handle_api(&method, &url, body, &state, &web_state, &ws_state)
         } else if let Some(dist) = dist_dir.as_ref() {
             serve_static_path(&path, dist)
                 .unwrap_or_else(|| {
@@ -470,7 +473,6 @@ pub fn start_http_server(
             json_error("Not Found", StatusCode(404))
         };
 
-        add_cors_headers(&mut response);
         let _ = request.respond(response);
     }
 }
@@ -500,14 +502,59 @@ fn serve_static_path(path: &str, dist_dir: &Path) -> Option<Response<std::io::Cu
     }
 }
 
+/// Decode percent-encoded URL query parameter values.
+fn url_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i+1..i+3]) {
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    result.push(byte as char);
+                    i += 3;
+                    continue;
+                }
+            }
+        } else if bytes[i] == b'+' {
+            result.push(' ');
+            i += 1;
+            continue;
+        }
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+    result
+}
+
+/// Encode bytes as standard Base64 (no external crate needed).
+fn base64_encode(input: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(CHARS[((n >> 18) & 63) as usize] as char);
+        out.push(CHARS[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { CHARS[((n >> 6) & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { CHARS[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
 fn handle_api(
     method: &str,
-    path: &str,
+    url: &str,   // full URL including query string
     body: Option<String>,
     app_state: &Arc<AppState>,
     web_state: &Arc<std::sync::Mutex<WebState>>,
     ws_state: &Option<Arc<crate::ws_server::WsState>>,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
+    // Strip query string for most route matching
+    let path = url.splitn(2, '?').next().unwrap_or(url);
+
     // Helper to parse JSON body as serde_json::Value
     let parse_body = || -> Option<serde_json::Value> {
         body.as_ref().and_then(|b| serde_json::from_str(b).ok())
@@ -770,11 +817,114 @@ fn handle_api(
                 Err(e) => json_error(&format!("Failed to read dir: {}", e), StatusCode(500))
             }
         }
+
+        // ── File Browser (rich directory listing for built-in picker) ──
+        ("GET", path_str) if path_str.starts_with("/api/browse-dir") => {
+            // Parse ?path= query param from the full url
+            let query_path: String = {
+                let qs = url.splitn(2, '?').nth(1).unwrap_or("");
+                url_decode(
+                    qs.split('&')
+                        .find(|p| p.starts_with("path="))
+                        .and_then(|p| p.splitn(2, '=').nth(1))
+                        .unwrap_or("")
+                )
+            };
+
+            // Resolve ~ to HOME
+            let resolved = if query_path.is_empty() || query_path == "~" {
+                std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
+            } else if query_path.starts_with("~/") {
+                let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
+                format!("{}{}", home, &query_path[1..])
+            } else {
+                query_path.clone()
+            };
+
+            let dir_path = PathBuf::from(&resolved);
+            let parent = dir_path.parent().map(|p| p.to_string_lossy().to_string());
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
+
+            match std::fs::read_dir(&dir_path) {
+                Ok(entries) => {
+                    let mut items: Vec<serde_json::Value> = entries.filter_map(|e| {
+                        let e = e.ok()?;
+                        let name = e.file_name().to_string_lossy().to_string();
+                        if name.starts_with('.') { return None; } // skip hidden
+                        let meta = e.metadata().ok()?;
+                        let is_dir = meta.is_dir();
+                        let is_symlink = e.path().symlink_metadata()
+                            .ok().map(|m| m.file_type().is_symlink()).unwrap_or(false);
+                        let size = if meta.is_file() { Some(meta.len()) } else { None };
+                        let modified = meta.modified().ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs());
+                        Some(serde_json::json!({
+                            "name": name,
+                            "path": e.path().to_string_lossy().to_string(),
+                            "is_dir": is_dir,
+                            "is_symlink": is_symlink,
+                            "size": size,
+                            "modified": modified,
+                        }))
+                    }).collect();
+
+                    // Dirs first, then files, both sorted case-insensitively
+                    items.sort_by(|a, b| {
+                        let a_dir = a["is_dir"].as_bool().unwrap_or(false);
+                        let b_dir = b["is_dir"].as_bool().unwrap_or(false);
+                        match (a_dir, b_dir) {
+                            (true, false) => std::cmp::Ordering::Less,
+                            (false, true) => std::cmp::Ordering::Greater,
+                            _ => {
+                                let an = a["name"].as_str().unwrap_or("").to_lowercase();
+                                let bn = b["name"].as_str().unwrap_or("").to_lowercase();
+                                an.cmp(&bn)
+                            }
+                        }
+                    });
+
+                    json_response(&serde_json::json!({
+                        "path": dir_path.to_string_lossy().to_string(),
+                        "parent": parent,
+                        "home": home,
+                        "entries": items,
+                    }), StatusCode(200))
+                }
+                Err(e) => json_error(&format!("Cannot read directory: {}", e), StatusCode(400))
+            }
+        }
         ("POST", "/api/fs/read-text-file") => {
             let args = parse_body();
             let path = args.as_ref().and_then(|a| a.get("path")).and_then(|v| v.as_str()).unwrap_or("").to_string();
             match std::fs::read_to_string(&path) {
                 Ok(contents) => json_response(&serde_json::json!({ "contents": contents }), StatusCode(200)),
+                Err(e) => json_error(&format!("Failed to read file: {}", e), StatusCode(500))
+            }
+        }
+        ("POST", "/api/fs/read-file-base64") => {
+            let args = parse_body();
+            let path = args.as_ref().and_then(|a| a.get("path")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let ext = std::path::Path::new(&path)
+                .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            if !["png","jpg","jpeg","gif","webp","svg","ico"].contains(&ext.as_str()) {
+                return json_error("Only image files are supported", StatusCode(400));
+            }
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    let encoded = base64_encode(&bytes);
+                    let mime = match ext.as_str() {
+                        "svg" => "image/svg+xml",
+                        "jpg" | "jpeg" => "image/jpeg",
+                        "gif" => "image/gif",
+                        "webp" => "image/webp",
+                        "ico" => "image/x-icon",
+                        _ => "image/png",
+                    };
+                    json_response(&serde_json::json!({
+                        "data_url": format!("data:{};base64,{}", mime, encoded)
+                    }), StatusCode(200))
+                }
                 Err(e) => json_error(&format!("Failed to read file: {}", e), StatusCode(500))
             }
         }
@@ -809,7 +959,9 @@ fn handle_api(
 
         // ── Options (CORS preflight) ──
         ("OPTIONS", _) => {
-            Response::from_data(vec![]).with_status_code(StatusCode(204))
+            let mut resp = Response::from_data(vec![]).with_status_code(StatusCode(204));
+            add_cors_headers(&mut resp);
+            resp
         }
 
         _ => json_error("Not Found", StatusCode(404)),

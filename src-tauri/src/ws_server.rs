@@ -129,6 +129,10 @@ async fn handle_ws_connection(
                                 }
                             }
 
+                            // Register TX channel BEFORE spawning so the reader
+                            // thread never loses early PTY output (e.g. shell prompt).
+                            ws_state.register(&session_id, tx.clone());
+
                             match spawn_pty_ws(
                                 &session_id,
                                 command,
@@ -143,12 +147,13 @@ async fn handle_ws_connection(
                             ) {
                                 Ok(_) => {
                                     current_session = Some(session_id.clone());
-                                    ws_state.register(&session_id, tx.clone());
                                     let _ = tx.send(Message::Text(
                                         serde_json::json!({"event":"spawned","session_id":session_id}).to_string()
                                     ));
                                 }
                                 Err(e) => {
+                                    // Spawn failed — unregister the pre-registered TX
+                                    ws_state.unregister(&session_id);
                                     let _ = tx.send(Message::Text(
                                         serde_json::json!({"event":"error","error":e}).to_string()
                                     ));

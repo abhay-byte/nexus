@@ -4,11 +4,16 @@
  */
 
 import { invoke as tauriInvoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
+import { dbg, dbgWarn, dbgError, dbgCount } from "./debug";
+
 
 /** Detect if running inside Tauri desktop app */
 export const isTauri = tauriIsTauri;
 
-const API_BASE = (() => {
+export const API_BASE = (() => {
+  if (tauriIsTauri()) {
+    return "http://127.0.0.1:7878";
+  }
   const host = window.location.host;
   return `http://${host}`;
 })();
@@ -90,49 +95,74 @@ function base64Encode(bytes: Uint8Array): string {
 
 function ensureSharedWs(): WebSocket {
   if (sharedWs?.readyState === WebSocket.OPEN) return sharedWs;
-  if (sharedWs?.readyState === WebSocket.CONNECTING) return sharedWs;
+  if (sharedWs?.readyState === WebSocket.CONNECTING) {
+    dbg('ws', 'reusing CONNECTING socket');
+    return sharedWs;
+  }
 
   const wsUrl = WS_BASE.replace(/:\d+/, ":7879") + "/ws";
+  dbg('ws', `connecting → ${wsUrl}`);
   sharedWs = new WebSocket(wsUrl);
   sharedWs.binaryType = "arraybuffer";
   sharedWsReady = false;
 
   sharedWs.onopen = () => {
     sharedWsReady = true;
+    dbgCount('wsConnects');
+    dbg('ws', `✓ connected to ${wsUrl} (total connects: ${window.__nexusDebugStats__?.wsConnects})`);
   };
 
   sharedWs.onmessage = (e) => {
+    dbgCount('wsMessagesIn');
     if (e.data instanceof ArrayBuffer) {
-      // Backend now sends PTY output as JSON text with session_id.
-      // Legacy binary frames are ignored.
+      dbg('ws', `binary frame ignored (${e.data.byteLength} bytes)`);
       return;
     }
     if (typeof e.data === "string") {
+      dbg('ws', `← raw msg (${e.data.length} chars): ${e.data.slice(0, 120)}`);
       try {
         const parsed = JSON.parse(e.data);
         if (parsed.event === "exit" && parsed.session_id) {
+          dbgCount('exits');
+          dbg('ws', `← EXIT session=${parsed.session_id}`);
           const cbs = wsListeners.get(`pty-exit:${parsed.session_id}`);
+          if (!cbs || cbs.size === 0) dbgWarn('ws', `no exit listener for session=${parsed.session_id}`);
           cbs?.forEach((cb) => cb(undefined));
         } else if (parsed.event === "spawned" && parsed.session_id) {
+          dbg('ws', `← SPAWNED session=${parsed.session_id}`);
           const cbs = wsListeners.get(`pty-spawned:${parsed.session_id}`);
           cbs?.forEach((cb) => cb(undefined));
+        } else if (parsed.event === "error") {
+          dbgError('ws', `← ERROR from server: ${parsed.error}`);
         } else if (parsed.event === "pty-output" && parsed.session_id && parsed.data) {
           const cbs = wsListeners.get(`pty-output:${parsed.session_id}`);
-          if (cbs) {
-            const binString = atob(parsed.data);
-            const bytes = Uint8Array.from(binString, (m) => m.charCodeAt(0));
-            cbs.forEach((cb) => cb(Array.from(bytes)));
+          const binString = atob(parsed.data);
+          const bytes = Uint8Array.from(binString, (m) => m.charCodeAt(0));
+          dbgCount('ptyOutputChunks');
+          dbgCount('ptyOutputBytes', bytes.byteLength);
+          dbg('pty', `← pty-output session=${parsed.session_id.slice(0,8)} bytes=${bytes.byteLength} listeners=${cbs?.size ?? 0}`);
+          if (!cbs || cbs.size === 0) {
+            dbgWarn('pty', `⚠ NO LISTENERS for pty-output:${parsed.session_id} — output will be LOST`);
           }
+          cbs?.forEach((cb) => cb(Array.from(bytes)));
+        } else {
+          dbg('ws', `← unhandled event=${parsed.event}`);
         }
       } catch {
-        // ignore malformed JSON
+        dbgWarn('ws', `malformed JSON: ${e.data.slice(0, 80)}`);
       }
     }
   };
 
-  sharedWs.onclose = () => {
+  sharedWs.onclose = (ev) => {
+    dbgCount('wsDisconnects');
+    dbg('ws', `✗ disconnected code=${ev.code} reason=${ev.reason || 'none'}`);
     sharedWsReady = false;
     sharedWs = null;
+  };
+
+  sharedWs.onerror = (ev) => {
+    dbgError('ws', 'WebSocket error', ev);
   };
 
   return sharedWs;
@@ -151,8 +181,12 @@ export function wsSpawn(opts: {
 }): Promise<void> {
   return new Promise((resolve) => {
     const ws = ensureSharedWs();
+    dbgCount('wsMessagesOut');
+    dbgCount('spawns');
+    dbg('spawn', `→ SPAWN session=${opts.sessionId.slice(0,8)} cmd=${opts.command || '<shell>'} cwd=${opts.cwd} wsState=${ws.readyState}`);
 
     const sendSpawn = () => {
+      dbg('spawn', `→ sending spawn for session=${opts.sessionId.slice(0,8)}`);
       ws.send(
         JSON.stringify({
           type: "spawn",
@@ -173,14 +207,17 @@ export function wsSpawn(opts: {
     if (ws.readyState === WebSocket.OPEN) {
       sendSpawn();
     } else {
+      dbg('spawn', `WS not open (state=${ws.readyState}), waiting for onopen…`);
       ws.onopen = () => {
         sharedWsReady = true;
+        dbg('ws', '✓ opened (from wsSpawn onopen)');
         sendSpawn();
       };
     }
 
     // Safety timeout — should never hit since we resolve after send
     setTimeout(() => {
+      dbgWarn('spawn', `safety timeout hit for session=${opts.sessionId.slice(0,8)} — did WS connect?`);
       resolve();
     }, 3000);
   });
@@ -190,6 +227,8 @@ export function wsSpawn(opts: {
 export function wsWrite(sessionId: string, data: Uint8Array): void {
   const ws = ensureSharedWs();
   if (ws.readyState === WebSocket.OPEN) {
+    dbgCount('wsMessagesOut');
+    dbg('pty', `→ write session=${sessionId.slice(0,8)} bytes=${data.byteLength}`);
     ws.send(
       JSON.stringify({
         type: "write",
@@ -197,6 +236,8 @@ export function wsWrite(sessionId: string, data: Uint8Array): void {
         data: base64Encode(data),
       })
     );
+  } else {
+    dbgWarn('pty', `write dropped — WS not open (state=${ws.readyState}) session=${sessionId.slice(0,8)}`);
   }
 }
 
@@ -204,6 +245,8 @@ export function wsWrite(sessionId: string, data: Uint8Array): void {
 export function wsResize(sessionId: string, cols: number, rows: number): void {
   const ws = ensureSharedWs();
   if (ws.readyState === WebSocket.OPEN) {
+    dbgCount('wsMessagesOut');
+    dbg('pty', `→ resize session=${sessionId.slice(0,8)} ${cols}x${rows}`);
     ws.send(
       JSON.stringify({
         type: "resize",
@@ -219,6 +262,8 @@ export function wsResize(sessionId: string, cols: number, rows: number): void {
 export function wsKill(sessionId: string): void {
   const ws = ensureSharedWs();
   if (ws.readyState === WebSocket.OPEN) {
+    dbgCount('wsMessagesOut');
+    dbg('spawn', `→ kill session=${sessionId.slice(0,8)}`);
     ws.send(
       JSON.stringify({
         type: "kill",

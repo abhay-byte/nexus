@@ -7,6 +7,7 @@ use nexus::{
     pty::*,
     server::{start_http_server, WebState},
     state::AppState,
+    ws_server::{start_ws_server, WsState},
 };
 use std::sync::Arc;
 
@@ -18,13 +19,28 @@ fn main() {
 
     let app_state = Arc::new(AppState::default());
     let web_state = Arc::new(std::sync::Mutex::new(WebState::default()));
+    let ws_state = Arc::new(WsState::default());
 
     // Start HTTP server in background (browser-accessible mode)
     {
         let state_clone = Arc::clone(&app_state);
         let web_clone = Arc::clone(&web_state);
+        let ws_clone = Arc::clone(&ws_state);
         std::thread::spawn(move || {
-            start_http_server(state_clone, web_clone, None);
+            start_http_server(state_clone, web_clone, Some(ws_clone));
+        });
+    }
+
+    // Start WebSocket server in background tokio thread (port 7879)
+    // This enables browser/web mode terminal PTY streaming via ws://127.0.0.1:7879/ws
+    {
+        let state_clone = Arc::clone(&app_state);
+        let ws_clone = Arc::clone(&ws_state);
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for WS");
+            rt.block_on(async {
+                start_ws_server(state_clone, ws_clone).await;
+            });
         });
     }
 

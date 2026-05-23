@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isTauri } from "../../lib/api";
+import { isTauri, API_BASE } from "../../lib/api";
+import { FilePicker } from "../FilePicker/FilePicker";
 import {
   CAVEMAN_ONE_CLICK_AGENT_IDS,
   DEFAULT_AGENCY_AGENT_SLUG,
@@ -159,14 +160,14 @@ export function AddProjectDialog({
   });
   const [submitting, setSubmitting] = useState(false);
   const [iconPreview, setIconPreview] = useState<string | null>(null);
+  const [showFilePicker, setShowFilePicker] = useState(false);
+  const [showIconPicker, setShowIconPicker] = useState(false);
 
   const [agencyAgents, setAgencyAgents] = useState<AgencyAgentOption[]>([]);
   const [agencyLoading, setAgencyLoading] = useState(false);
   const [agencyFetched, setAgencyFetched] = useState(false);
 
   const [mcpPresetServerIds, setMcpPresetServerIds] = useState<Set<string>>(new Set());
-  const pngInputRef = useRef<HTMLInputElement>(null);
-  const dirInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!draft.icon) {
@@ -183,73 +184,39 @@ export function AddProjectDialog({
   }, [draft.icon]);
 
   const pickDirectory = async () => {
-    if (!isTauri()) {
-      // Browser mode: trigger hidden directory input
-      dirInputRef.current?.click();
-      return;
-    }
-    const dialog = await import("@tauri-apps/plugin-dialog");
-    const selected = await dialog.open({
-      directory: true,
-      multiple: false,
-      title: "Select a project folder",
-      defaultPath: draft.path || undefined,
-    });
-    if (typeof selected !== "string") return;
-    setDraft((current) => ({
-      ...current,
-      path: selected,
-      name: current.name || getNameFromPath(selected),
-    }));
+    setShowFilePicker(true);
   };
 
-  const handleDirFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    // webkitRelativePath looks like "foldername/subdir/file.txt"
-    const firstPath = files[0].webkitRelativePath;
-    const folderName = firstPath.split("/")[0];
-
-    // Set a reasonable default absolute path
-    const defaultPath = `/home/abhay/repos/${folderName}`;
+  const handleFilePickerSelect = (path: string) => {
+    setShowFilePicker(false);
     setDraft((current) => ({
       ...current,
-      path: defaultPath,
-      name: current.name || folderName,
+      path,
+      name: current.name || getNameFromPath(path),
     }));
-
-    event.target.value = ""; // reset so same folder can be picked again
   };
 
   const pickIcon = async () => {
-    if (!isTauri()) {
-      // Browser mode: trigger hidden file input
-      pngInputRef.current?.click();
-      return;
-    }
-    const dialog = await import("@tauri-apps/plugin-dialog");
-    const selected = await dialog.open({
-      directory: false,
-      multiple: false,
-      title: "Select a PNG icon",
-      filters: [{ name: "Images", extensions: ["png"] }],
-    });
-    if (typeof selected !== "string") return;
-    setDraft((current) => ({ ...current, icon: selected }));
+    setShowIconPicker(true);
   };
 
-  const handlePngFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setDraft((current) => ({ ...current, icon: dataUrl }));
-    };
-    reader.readAsDataURL(file);
-    event.target.value = ""; // reset so same file can be picked again
+  const handleIconPickerSelect = async (path: string) => {
+    setShowIconPicker(false);
+    try {
+      const res = await fetch(`${API_BASE}/api/fs/read-file-base64`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      if (!res.ok) throw new Error("Failed to read image");
+      const { data_url } = await res.json() as { data_url: string };
+      setDraft((current) => ({ ...current, icon: data_url }));
+    } catch {
+      // fallback: store path only (Tauri can resolve it)
+      setDraft((current) => ({ ...current, icon: path }));
+    }
   };
+
 
   const clearIcon = () => {
     setDraft((current) => ({ ...current, icon: undefined }));
@@ -378,16 +345,10 @@ export function AddProjectDialog({
                 className="bg-[#ffcc00] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] text-[#1a1a1a] px-6 font-black uppercase neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all active:bg-[#1a1a1a] active:text-[#ffcc00]"
                 onClick={() => void pickDirectory()}
                 type="button"
+                id="browse-directory-btn"
               >
-                BROWSE
+                <span className="material-symbols-outlined" style={{ fontSize: 20 }}>folder_open</span>
               </button>
-              <input
-                ref={dirInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleDirFileChange}
-                {...{ webkitdirectory: "true", directory: "true" } as any}
-              />
             </div>
           </div>
 
@@ -445,15 +406,8 @@ export function AddProjectDialog({
                   onClick={() => void pickIcon()}
                   type="button"
                 >
-                  Pick PNG
+                  Pick Image
                 </button>
-                <input
-                  ref={pngInputRef}
-                  type="file"
-                  accept="image/png"
-                  className="hidden"
-                  onChange={handlePngFileChange}
-                />
                 {draft.icon && (
                   <button
                     className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] px-4 py-2 font-black uppercase text-xs hover:bg-[#e63b2e] hover:text-white hover:border-[#e63b2e] transition-all"
@@ -728,6 +682,27 @@ export function AddProjectDialog({
           </button>
         </div>
       </section>
+
+      {/* In-app file system picker (browser mode) */}
+      {showFilePicker && (
+        <FilePicker
+          title="Select Project Folder"
+          initialPath={draft.path || "~"}
+          onSelect={handleFilePickerSelect}
+          onClose={() => setShowFilePicker(false)}
+        />
+      )}
+
+      {showIconPicker && (
+        <FilePicker
+          title="Select Image"
+          initialPath="~"
+          allowFiles={true}
+          allowedExtensions={["png","jpg","jpeg","gif","webp","svg","ico"]}
+          onSelect={(path) => void handleIconPickerSelect(path)}
+          onClose={() => setShowIconPicker(false)}
+        />
+      )}
     </div>
   );
 }

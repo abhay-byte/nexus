@@ -1,5 +1,8 @@
 import { listen, invoke, isTauri, wsSpawn, wsWrite, wsResize, wsKill } from "../lib/api";
-import { getDirectWriter } from "../lib/directWriter";
+import { getDirectWriter, bufferPreMountOutput } from "../lib/directWriter";
+import { dbg, dbgCount } from "../lib/debug";
+
+
 import { nanoid } from "nanoid";
 import { create } from "zustand";
 import { KNOWN_AGENTS } from "../constants/agents";
@@ -180,22 +183,30 @@ async function invokeSafely<T>(command: string, args?: Record<string, unknown>) 
 
 async function ensureSessionEventBridge(sessionId: string) {
   if (!sessionOutputUnlisteners.has(sessionId)) {
+    dbg('pty', `registering pty-output listener for session=${sessionId.slice(0,8)}`);
     sessionOutputUnlisteners.set(
       sessionId,
       listen<number[]>(`pty-output:${sessionId}`, (event) => {
         const payload = new Uint8Array(event.payload);
+        dbgCount('ptyOutputChunks');
+        dbgCount('ptyOutputBytes', payload.byteLength);
+        dbg('pty', `← pty-output (Tauri) session=${sessionId.slice(0,8)} bytes=${payload.byteLength}`);
         const store = useSessionStore.getState();
         store.appendSessionOutput(sessionId, payload);
         store.markSessionStatus(sessionId, "running");
         store.noteSessionActivity(sessionId);
       }),
     );
+  } else {
+    dbg('pty', `pty-output listener already registered for session=${sessionId.slice(0,8)}`);
   }
 
   if (!sessionExitUnlisteners.has(sessionId)) {
+    dbg('pty', `registering pty-exit listener for session=${sessionId.slice(0,8)}`);
     sessionExitUnlisteners.set(
       sessionId,
       listen(`pty-exit:${sessionId}`, () => {
+        dbg('pty', `← pty-exit session=${sessionId.slice(0,8)}`);
         useSessionStore.getState().markSessionStatus(sessionId, "exited");
         void releaseSessionEventBridge(sessionId);
       }),
@@ -1151,7 +1162,13 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       // the truncation-triggered full-rewrite bug that dropped characters.
       const directWriter = getDirectWriter(sessionId);
       if (directWriter) {
+        dbgCount('directWrites');
+        dbg('writer', `→ directWrite session=${sessionId.slice(0,8)} bytes=${chunk.byteLength}`);
         directWriter(chunk);
+      } else {
+        // Terminal view not mounted yet — buffer for replay on first mount
+        dbg('writer', `no directWriter yet — buffering session=${sessionId.slice(0,8)} bytes=${chunk.byteLength}`);
+        bufferPreMountOutput(sessionId, chunk);
       }
 
       // Still accumulate in the log string for search / export.

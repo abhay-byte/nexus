@@ -2,6 +2,16 @@ import { useEffect, useState } from "react";
 import { isTauri } from "../../lib/api";
 import { useSessionStore } from "../../store/sessionStore";
 
+function NexusIcon({ className = "w-6 h-6" }: { className?: string }) {
+  return (
+    <img
+      src="/logo.png"
+      alt="Nexus Logo"
+      className={`${className} object-contain`}
+    />
+  );
+}
+
 interface TitlebarProps {
   sidebarCollapsed: boolean;
 }
@@ -62,12 +72,9 @@ export function Titlebar({ sidebarCollapsed }: TitlebarProps) {
       className={`bg-[#f5f0e8] dark:bg-[#1a1a1a] border-b-4 border-[#1a1a1a] dark:border-[#f5f0e8] flex justify-between items-center w-full z-50 shadow-[4px_4px_0px_0px_#1a1a1a] dark:shadow-[4px_4px_0px_0px_#f5f0e8] fixed top-0 left-0 transition-all duration-200 ${sidebarCollapsed ? "h-10 px-3" : "h-16 px-6"}`}
       data-tauri-drag-region
     >
-      <div className="flex items-center gap-4 h-full" data-tauri-drag-region>
-        {sidebarCollapsed ? (
-          <span className="material-symbols-outlined text-xl text-[#1a1a1a] dark:text-[#f5f0e8]">
-            terminal
-          </span>
-        ) : (
+      <div className="flex items-center gap-3 h-full" data-tauri-drag-region>
+        <NexusIcon className={`${sidebarCollapsed ? "w-6 h-6" : "w-8 h-8"} rounded-md border-2 border-[#1a1a1a] dark:border-[#f5f0e8] shadow-[2px_2px_0px_0px_#1a1a1a] dark:shadow-[2px_2px_0px_0px_#f5f0e8]`} />
+        {!sidebarCollapsed && (
           <div className="text-2xl font-['Space_Grotesk'] uppercase tracking-tighter font-black text-[#1a1a1a] dark:text-[#f5f0e8] border-2 border-[#1a1a1a] dark:border-[#f5f0e8] px-2 h-8 flex items-center shrink-0">
             NEXUS_TERMINAL
           </div>
