@@ -54,8 +54,8 @@ cargo tauri build
 After a successful build, artifacts are placed at:
 
 ```
-src-tauri/target/release/bundle/msi/Nexus_0.1.7_x64_en-US.msi
-src-tauri/target/release/bundle/nsis/Nexus_0.1.7_x64-setup.exe
+src-tauri/target/release/bundle/msi/Nexus_0.1.9_x64_en-US.msi
+src-tauri/target/release/bundle/nsis/Nexus_0.1.9_x64-setup.exe
 src-tauri/target/release/nexus.exe                    # portable raw binary
 ```
 
@@ -71,7 +71,7 @@ npm run tauri build -- --runner cargo-xwin --target x86_64-pc-windows-msvc
 
 Output:
 ```
-src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Nexus_0.1.7_x64-setup.exe
+src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Nexus_0.1.9_x64-setup.exe
 src-tauri/target/x86_64-pc-windows-msvc/release/nexus.exe    # portable raw binary
 ```
 
@@ -86,7 +86,7 @@ We distribute two Windows artifacts:
 | Artifact | File | Size | Use Case |
 |---|---|---|---|
 | **Portable executable** | `nexus-windows-x86_64.exe` | ~13 MB | No installation. Double-click to run. Requires WebView2 pre-installed. |
-| **NSIS Installer** | `Nexus_0.1.7_x64-setup.exe` | ~4.5 MB | Full installer. Auto-installs WebView2 if missing. |
+| **NSIS Installer** | `Nexus_0.1.9_x64-setup.exe` | ~4.5 MB | Full installer. Auto-installs WebView2 if missing. |
 
 ### Portable Executable
 
