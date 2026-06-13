@@ -74,12 +74,28 @@ export function registerDirectWriter(sessionId: string, writer: (chunk: Uint8Arr
 
 /** Unregister a direct writer for a session. */
 export function unregisterDirectWriter(sessionId: string) {
-  directWriters.delete(sessionId);
+  const writer = directWriters.get(sessionId);
+  // Flush any pending chunks synchronously so output arriving between the
+  // last rAF and this unmount isn't silently dropped.  Without this, closing
+  // a tab mid-burst (e.g. while `npm install` is flooding) loses the tail
+  // of the output.  Cancel any pending rAF — the writer is gone.
+  const pending = pendingWrites.get(sessionId);
+  if (writer && pending && pending.length > 0) {
+    const totalBytes = pending.reduce((acc, c) => acc + c.byteLength, 0);
+    if (totalBytes > 0) {
+      const combined = new Uint8Array(totalBytes);
+      let offset = 0;
+      for (const c of pending) {
+        combined.set(c, offset);
+        offset += c.byteLength;
+      }
+      writer(combined);
+    }
+  }
   pendingWrites.delete(sessionId);
+  directWriters.delete(sessionId);
   preMountBuffers.delete(sessionId);
   dbg('writer', `unregistered directWriter for session=${sessionId.slice(0,8)}`);
-  // Clear any pre-mount buffer too (session is gone)
-  preMountBuffers.delete(sessionId);
 }
 
 /** Get the direct writer for a session (if registered). */
@@ -100,21 +116,6 @@ export function queueDirectWrite(sessionId: string, chunk: Uint8Array) {
   }
   queue.push(chunk);
   scheduleFlush();
-}
-
-/**
- * Backward-compat path: write synchronously to the writer for a session
- * (used by sessionStore.appendSessionOutput, which still wants the
- * pre-batching behavior for direct dispatch when a writer is registered).
- * The batched path is queueDirectWrite above.
- */
-export function writeDirect(sessionId: string, chunk: Uint8Array): boolean {
-  const writer = directWriters.get(sessionId);
-  if (writer) {
-    writer(chunk);
-    return true;
-  }
-  return false;
 }
 
 /**

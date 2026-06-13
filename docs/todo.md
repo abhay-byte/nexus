@@ -67,7 +67,10 @@ If the client's IP is **not** in the list → instant `403 Forbidden`, no data s
   impact: WebUI + terminal both freeze; blocks all interactive work while commands run
   images: null
   github_ref: null
-  status: in-progress
+  status: finished
+  pr: https://github.com/abhay-byte/nexus/pull/1
+  merged_into: v0.2.x
+  merged_at_commit: ce1a1e5
   root_cause: |
     Three compounding bottlenecks:
     1. sessionStore.ts:196 — markSessionStatus("running") fires on EVERY PTY chunk,
