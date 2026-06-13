@@ -77,11 +77,28 @@ export function TerminalView({
     return () => clearTimeout(timer);
   }, [isTabActive, active, session.id, doFit]);
 
-  // ── Focus terminal when pane becomes active ──────────────────────────────
+  // ── Focus terminal when pane becomes active or tab becomes visible ─────
+  // Replaces a one-shot term.focus() — we also blur whatever element
+  // currently holds focus (often a button the user clicked to open
+  // the terminal or switch project/tab; that button keeps focus in
+  // Tauri's webview and suppresses the next focus call) and retry
+  // across multiple frames to win the race against React's commit
+  // and any webview-level focus re-assertion.
   useEffect(() => {
     const term = termRef.current;
     if (!term || !active || !isTabActive) return;
-    term.focus();
+    const focusNow = () => {
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement && activeEl !== term.textarea) {
+        activeEl.blur();
+      }
+      if (term.textarea) term.textarea.focus();
+      term.focus();
+    };
+    focusNow();
+    requestAnimationFrame(focusNow);
+    window.setTimeout(focusNow, 50);
+    window.setTimeout(focusNow, 200);
   }, [active, isTabActive]);
 
   // ── Main terminal setup (stable deps — only recreate on session change) ──
@@ -147,23 +164,25 @@ export function TerminalView({
     // BEFORE this one on first mount and bails out on null termRef, so
     // it never focuses freshly opened terminals.
     //
-    // Three attempts at different timings because Tauri's webview can
-    // swallow a single focus call if a button still holds focus from
-    // the click that triggered the mount:
-    //   - rAF: next frame, after DOM is committed
-    //   - setTimeout 50ms: after React has flushed state updates
-    //   - setTimeout 200ms: covers slow TUI startup that grabs focus
+    // Multiple attempts at different timings because Tauri's webview
+    // suppresses focus calls when a button still holds focus from the
+    // click that triggered the mount.  We also blur the current
+    // active element first so the webview can't re-assert it.
     const focusNow = () => {
-      if (activeRef.current && isTabActiveRef.current && term.textarea) {
-        term.textarea.focus();
-        term.focus();
+      if (!activeRef.current || !isTabActiveRef.current) return;
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement && activeEl !== term.textarea) {
+        activeEl.blur();
       }
+      if (term.textarea) term.textarea.focus();
+      term.focus();
     };
     if (activeRef.current && isTabActiveRef.current) {
       focusNow();
       requestAnimationFrame(focusNow);
       window.setTimeout(focusNow, 50);
       window.setTimeout(focusNow, 200);
+      window.setTimeout(focusNow, 500);
     }
 
     // Belt-and-suspenders for multi-pane clicks: if the user mouses down
@@ -172,6 +191,10 @@ export function TerminalView({
     // xterm's own textarea should already handle this, but on some
     // platforms the focus event is suppressed; this guarantees it.
     const onContainerMouseDown = () => {
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement && activeEl !== term.textarea) {
+        activeEl.blur();
+      }
       if (term.textarea) term.textarea.focus();
       term.focus();
     };
