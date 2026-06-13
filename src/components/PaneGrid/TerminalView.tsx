@@ -45,6 +45,8 @@ export function TerminalView({
   const exitNoticeRef = useRef(false);
   const isTabActiveRef = useRef(isTabActive);
   isTabActiveRef.current = isTabActive;
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const writeToSession = useSessionStore((state) => state.writeToSession);
   const resizeSession = useSessionStore((state) => state.resizeSession);
@@ -137,6 +139,30 @@ export function TerminalView({
     term.loadAddon(fitAddon);
     term.loadAddon(linksAddon);
     term.open(container);
+
+    // T2: focus the terminal as soon as it opens, when this pane is
+    // active and the tab is visible.  Done here (inside the main effect,
+    // after term.open) so we know termRef.current is non-null — the
+    // separate [active, isTabActive] effect at the top of the file runs
+    // BEFORE this one on first mount and bails out on null termRef, so
+    // it never focuses freshly opened terminals.  rAF defers focus to
+    // the next frame so the textarea is mounted and focusable.
+    const focusOnMount = () => {
+      if (activeRef.current && isTabActiveRef.current) {
+        requestAnimationFrame(() => term.focus());
+      }
+    };
+    focusOnMount();
+
+    // Belt-and-suspenders for multi-pane clicks: if the user mouses down
+    // on this terminal's container, focus it immediately rather than
+    // waiting for the click → state update → re-render → useEffect chain.
+    // xterm's own textarea should already handle this, but on some
+    // platforms the focus event is suppressed; this guarantees it.
+    const onContainerMouseDown = () => {
+      term.focus();
+    };
+    container.addEventListener("mousedown", onContainerMouseDown);
 
     // Write any existing log content that accumulated before the terminal
     // was mounted (e.g. session restore, tab switch catch-up).
@@ -300,6 +326,7 @@ export function TerminalView({
       container.removeEventListener("wheel", wheelHandler);
       container.removeEventListener("dragover", dragOverHandler);
       container.removeEventListener("drop", dropHandler);
+      container.removeEventListener("mousedown", onContainerMouseDown);
       term.dispose();
     };
     // Stable deps: only recreate the Terminal on session or pane identity change.
