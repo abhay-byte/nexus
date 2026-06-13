@@ -145,14 +145,26 @@ export function TerminalView({
     // after term.open) so we know termRef.current is non-null — the
     // separate [active, isTabActive] effect at the top of the file runs
     // BEFORE this one on first mount and bails out on null termRef, so
-    // it never focuses freshly opened terminals.  rAF defers focus to
-    // the next frame so the textarea is mounted and focusable.
-    const focusOnMount = () => {
-      if (activeRef.current && isTabActiveRef.current) {
-        requestAnimationFrame(() => term.focus());
+    // it never focuses freshly opened terminals.
+    //
+    // Three attempts at different timings because Tauri's webview can
+    // swallow a single focus call if a button still holds focus from
+    // the click that triggered the mount:
+    //   - rAF: next frame, after DOM is committed
+    //   - setTimeout 50ms: after React has flushed state updates
+    //   - setTimeout 200ms: covers slow TUI startup that grabs focus
+    const focusNow = () => {
+      if (activeRef.current && isTabActiveRef.current && term.textarea) {
+        term.textarea.focus();
+        term.focus();
       }
     };
-    focusOnMount();
+    if (activeRef.current && isTabActiveRef.current) {
+      focusNow();
+      requestAnimationFrame(focusNow);
+      window.setTimeout(focusNow, 50);
+      window.setTimeout(focusNow, 200);
+    }
 
     // Belt-and-suspenders for multi-pane clicks: if the user mouses down
     // on this terminal's container, focus it immediately rather than
@@ -160,6 +172,7 @@ export function TerminalView({
     // xterm's own textarea should already handle this, but on some
     // platforms the focus event is suppressed; this guarantees it.
     const onContainerMouseDown = () => {
+      if (term.textarea) term.textarea.focus();
       term.focus();
     };
     container.addEventListener("mousedown", onContainerMouseDown);
