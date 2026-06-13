@@ -45,3 +45,46 @@ If the client's IP is **not** in the list → instant `403 Forbidden`, no data s
 - [ ] Restrict CORS from `*` to specific allowed origins
 - [ ] Add rate limiting for API endpoints
 - [ ] Add request logging middleware
+
+---
+
+## Tracked Items (todo-triage schema)
+
+```yaml
+---
+- id: T1
+  title: Fix terminal/WebUI freeze when running CLI tools
+  type: bug
+  priority: high
+  difficulty: medium
+  frequency: always
+  expected: Terminal runs CLI commands; webui stays interactive; output streams without blocking
+  actual: Whole UI freezes while any CLI tool executes, including simple commands
+  reproduction: |
+    1. Open nexus webui/terminal
+    2. Run any CLI command (e.g. ls, echo, npm install)
+    3. UI becomes unresponsive until command completes
+  impact: WebUI + terminal both freeze; blocks all interactive work while commands run
+  images: null
+  github_ref: null
+  status: in-progress
+  root_cause: |
+    Three compounding bottlenecks:
+    1. sessionStore.ts:196 — markSessionStatus("running") fires on EVERY PTY chunk,
+       creating a new sessions object that invalidates App.tsx + PaneGrid.tsx
+       (both subscribe to state.sessions) and forces a full re-render of the
+       844-line App + N panes per chunk.
+    2. TerminalView directWriter — term.write() runs synchronously on the main
+       thread for every chunk; large ANSI payloads block input handling.
+    3. pty.rs reader — emits one Tauri event per 8KB read; Tauri event system
+       overhead is high, flooding the main thread.
+  plan: |
+    - Fix 1 (frontend, lowest risk): drop per-chunk markSessionStatus call;
+      status is already "running" from launch path. Keep noteSessionActivity
+      since it early-returns unchanged state.
+    - Fix 2 (frontend, low risk): wrap directWriter writes in requestAnimationFrame
+      so xterm batches per-frame, freeing main thread between paints.
+    - Fix 3 (backend, medium risk): coalesce PTY reads in 16ms windows before
+      emitting; reduces emit count 10-50x for high-throughput commands.
+---
+```
