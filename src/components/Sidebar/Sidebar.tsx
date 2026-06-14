@@ -200,7 +200,7 @@ export function Sidebar({
             <h2 className="font-['Space_Grotesk'] font-bold uppercase text-xl font-black">
               WORKSPACE
             </h2>
-            <p className="font-['Space_Grotesk'] text-[10px] opacity-60">v0.1.9</p>
+            <p className="font-['Space_Grotesk'] text-[10px] opacity-60">v0.2.0</p>
           </div>
         )}
         <button
