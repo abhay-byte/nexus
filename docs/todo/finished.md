@@ -27,4 +27,26 @@
     - Fix 1: drop per-chunk markSessionStatus call
     - Fix 2: wrap directWriter writes in requestAnimationFrame
     - Fix 3: coalesce PTY reads in 16ms windows before emitting
+- id: T2
+  title: Terminal focus lost on project switch and first CLI tool run
+  type: bug
+  priority: critical
+  difficulty: unknown
+  frequency: always
+  expected: Terminal auto-focuses when switching projects or when a CLI tool starts for the first time
+  actual: |
+    Two symptoms:
+    1. Switching to a different project does not focus the terminal — user must click
+    2. Running a CLI tool for the first time starts with terminal unfocused — user must click
+  impact: Blocks interactive terminal work across projects; requires manual click every time
+  images: null
+  github_ref: null
+  status: finished
+  pr: https://github.com/abhay-byte/nexus/pull/3
+  merged_into: v0.2.x
+  plan: |
+    Root cause: useEffect([active, isTabActive]) doesn't re-fire on project switch
+    because isTabActive is per-project. Fix: thread isProjectActive from App.tsx
+    through PaneGrid → Pane → TerminalView and add to focus useEffect deps.
+    4 files changed, zero TS errors, user-approved.
 ---
