@@ -24,6 +24,8 @@ interface TerminalViewProps {
   cursorBlink: boolean;
   /** True when the parent terminal tab is currently visible. */
   isTabActive: boolean;
+  /** True when the parent project is the active (visible) project. */
+  isProjectActive: boolean;
   /** True when this pane has keyboard focus. */
   active: boolean;
 }
@@ -37,6 +39,7 @@ export function TerminalView({
   cursorStyle,
   cursorBlink,
   isTabActive,
+  isProjectActive,
   active,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -45,6 +48,8 @@ export function TerminalView({
   const exitNoticeRef = useRef(false);
   const isTabActiveRef = useRef(isTabActive);
   isTabActiveRef.current = isTabActive;
+  const isProjectActiveRef = useRef(isProjectActive);
+  isProjectActiveRef.current = isProjectActive;
   const activeRef = useRef(active);
   activeRef.current = active;
 
@@ -77,7 +82,7 @@ export function TerminalView({
     return () => clearTimeout(timer);
   }, [isTabActive, active, session.id, doFit]);
 
-  // ── Focus terminal when pane becomes active or tab becomes visible ─────
+  // ── Focus terminal when pane becomes active, tab becomes visible, or project switches ──
   // Replaces a one-shot term.focus() — we also blur whatever element
   // currently holds focus (often a button the user clicked to open
   // the terminal or switch project/tab; that button keeps focus in
@@ -86,7 +91,7 @@ export function TerminalView({
   // and any webview-level focus re-assertion.
   useEffect(() => {
     const term = termRef.current;
-    if (!term || !active || !isTabActive) return;
+    if (!term || !active || !isTabActive || !isProjectActive) return;
     const focusNow = () => {
       const activeEl = document.activeElement;
       if (activeEl instanceof HTMLElement && activeEl !== term.textarea) {
@@ -99,7 +104,7 @@ export function TerminalView({
     requestAnimationFrame(focusNow);
     window.setTimeout(focusNow, 50);
     window.setTimeout(focusNow, 200);
-  }, [active, isTabActive]);
+  }, [active, isTabActive, isProjectActive]);
 
   // ── Main terminal setup (stable deps — only recreate on session change) ──
   useEffect(() => {
@@ -169,7 +174,7 @@ export function TerminalView({
     // click that triggered the mount.  We also blur the current
     // active element first so the webview can't re-assert it.
     const focusNow = () => {
-      if (!activeRef.current || !isTabActiveRef.current) return;
+      if (!activeRef.current || !isTabActiveRef.current || !isProjectActiveRef.current) return;
       const activeEl = document.activeElement;
       if (activeEl instanceof HTMLElement && activeEl !== term.textarea) {
         activeEl.blur();
@@ -177,7 +182,7 @@ export function TerminalView({
       if (term.textarea) term.textarea.focus();
       term.focus();
     };
-    if (activeRef.current && isTabActiveRef.current) {
+    if (activeRef.current && isTabActiveRef.current && isProjectActiveRef.current) {
       focusNow();
       requestAnimationFrame(focusNow);
       window.setTimeout(focusNow, 50);
