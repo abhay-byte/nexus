@@ -1,5 +1,5 @@
 import { listen, invoke, isTauri, wsSpawn, wsWrite, wsResize, wsKill } from "../lib/api";
-import { getDirectWriter, bufferPreMountOutput } from "../lib/directWriter";
+import { getDirectWriter, bufferPreMountOutput, queueDirectWrite } from "../lib/directWriter";
 import { dbg, dbgCount } from "../lib/debug";
 
 
@@ -192,8 +192,15 @@ async function ensureSessionEventBridge(sessionId: string) {
         dbgCount('ptyOutputBytes', payload.byteLength);
         dbg('pty', `← pty-output (Tauri) session=${sessionId.slice(0,8)} bytes=${payload.byteLength}`);
         const store = useSessionStore.getState();
+        // T1: do NOT call markSessionStatus here. Session status is already
+        // "running" from the launch path (line 436/636/746) and re-setting
+        // it on every chunk creates a new `sessions` object, which invalidates
+        // every state.sessions subscriber (App.tsx, PaneGrid.tsx) and forces
+        // a full UI re-render per 8KB PTY read — the main freeze source.
         store.appendSessionOutput(sessionId, payload);
-        store.markSessionStatus(sessionId, "running");
+        // noteSessionActivity is cheap (early-returns unchanged state) and
+        // drives pane-attention highlighting when output arrives in a
+        // non-active pane, so keep it.
         store.noteSessionActivity(sessionId);
       }),
     );
@@ -1160,11 +1167,17 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       // Direct write to xterm.js — bypasses the log string entirely for
       // rendering.  This eliminates string churn, delta computation, and
       // the truncation-triggered full-rewrite bug that dropped characters.
-      const directWriter = getDirectWriter(sessionId);
-      if (directWriter) {
+      //
+      // T1: route through queueDirectWrite so chunks are coalesced per
+      // animation frame into a single term.write call.  This keeps the
+      // main thread responsive during output floods (npm install, cat
+      // largefile, etc.) — the renderer gets a chance to paint between
+      // frames and pending input events can be processed.
+      const hasWriter = getDirectWriter(sessionId) !== undefined;
+      if (hasWriter) {
         dbgCount('directWrites');
         dbg('writer', `→ directWrite session=${sessionId.slice(0,8)} bytes=${chunk.byteLength}`);
-        directWriter(chunk);
+        queueDirectWrite(sessionId, chunk);
       } else {
         // Terminal view not mounted yet — buffer for replay on first mount
         dbg('writer', `no directWriter yet — buffering session=${sessionId.slice(0,8)} bytes=${chunk.byteLength}`);

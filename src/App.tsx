@@ -655,6 +655,7 @@ function App() {
                               project={project}
                               layoutKey={tab.id}
                               isTabActive={tab.id === activeTabId}
+                              isProjectActive={isVisible}
                               onLaunchAgent={(agentId, paneId) => launchAgent(agentId, paneId, project)}
                               onLaunchShell={(paneId) => launchShell(paneId, project)}
                             />

@@ -11,6 +11,7 @@ interface PaneProps {
   session: Session | null;
   customAgents: AgentConfig[];
   isTabActive: boolean;
+  isProjectActive: boolean;
   onFocus: () => void;
   onLaunchAgent: (agentId: string, paneId: string) => void;
   onLaunchShell: (paneId: string) => void;
@@ -24,6 +25,7 @@ export function Pane({
   session,
   customAgents,
   isTabActive,
+  isProjectActive,
   onFocus,
   onLaunchAgent,
   onLaunchShell,
@@ -107,6 +109,7 @@ export function Pane({
               cursorStyle={settings.cursorStyle}
               cursorBlink={settings.cursorBlink}
               isTabActive={isTabActive}
+              isProjectActive={isProjectActive}
               active={active}
             />
           </div>

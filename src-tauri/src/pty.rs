@@ -8,8 +8,12 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
-    sync::Arc,
+    sync::{
+        mpsc::{self, RecvTimeoutError},
+        Arc,
+    },
     thread,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, State};
 
@@ -621,29 +625,84 @@ pub async fn spawn_pty(
     }
 
     let app_handle = app.clone();
-    thread::spawn(move || {
+    // T1: coalesce PTY output in 16ms windows (or 64KB, whichever comes
+    // first) before emitting.  Without this, every 8KB read triggers a
+    // Tauri event which the renderer has to deserialize on the main thread
+    // — for high-throughput commands (`npm install`, `cat largefile`) the
+    // event storm saturates the main thread and the UI freezes.
+    let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(64);
+    let reader_thread = thread::spawn(move || {
         let mut buffer = [0u8; 8192];
-
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => {
-                    let _ = app_handle.emit(format!("pty-exit:{reader_session_id}").as_str(), ());
+                    // Signal EOF with an empty vec; the emitter flushes
+                    // any pending data and emits pty-exit.
+                    let _ = tx.send(Vec::new());
                     break;
                 }
                 Ok(size) => {
-                    let payload = buffer[..size].to_vec();
-                    let _ = app_handle.emit(
-                        format!("pty-output:{reader_session_id}").as_str(),
-                        payload,
-                    );
+                    // If the consumer falls behind, drop chunks rather
+                    // than block the reader — stale output is worse than
+                    // missing output for a terminal feed.
+                    let _ = tx.try_send(buffer[..size].to_vec());
                 }
                 Err(_) => {
-                    let _ = app_handle.emit(format!("pty-exit:{reader_session_id}").as_str(), ());
+                    let _ = tx.send(Vec::new());
                     break;
                 }
             }
         }
     });
+    let emitter_sid = reader_session_id.clone();
+    let emitter_app = app_handle;
+    thread::spawn(move || {
+        const FLUSH_INTERVAL: Duration = Duration::from_millis(16);
+        const FLUSH_SIZE: usize = 64 * 1024;
+        let mut pending: Vec<u8> = Vec::with_capacity(FLUSH_SIZE);
+        let mut last_flush = Instant::now();
+        loop {
+            let recv_timeout = if pending.is_empty() {
+                // Idle — wait up to 100ms so we still pick up exit events
+                // promptly when the child terminates without output.
+                Duration::from_millis(100)
+            } else {
+                FLUSH_INTERVAL.saturating_sub(last_flush.elapsed())
+            };
+            match rx.recv_timeout(recv_timeout) {
+                Ok(chunk) if chunk.is_empty() => {
+                    // EOF from reader thread
+                    if !pending.is_empty() {
+                        let payload = std::mem::take(&mut pending);
+                        let _ = emitter_app.emit(
+                            format!("pty-output:{emitter_sid}").as_str(),
+                            payload,
+                        );
+                    }
+                    let _ = emitter_app
+                        .emit(format!("pty-exit:{emitter_sid}").as_str(), ());
+                    break;
+                }
+                Ok(chunk) => {
+                    pending.extend_from_slice(&chunk);
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+
+            if pending.len() >= FLUSH_SIZE
+                || (!pending.is_empty() && last_flush.elapsed() >= FLUSH_INTERVAL)
+            {
+                let payload = std::mem::take(&mut pending);
+                let _ = emitter_app.emit(
+                    format!("pty-output:{emitter_sid}").as_str(),
+                    payload,
+                );
+                last_flush = Instant::now();
+            }
+        }
+    });
+    let _ = reader_thread;
 
     // Force SIGWINCH after the child process has had time to initialize its
     // TUI.  Without this, TUI programs (opencode / opentui) that query the
