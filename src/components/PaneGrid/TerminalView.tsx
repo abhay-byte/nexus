@@ -24,6 +24,8 @@ interface TerminalViewProps {
   cursorBlink: boolean;
   /** True when the parent terminal tab is currently visible. */
   isTabActive: boolean;
+  /** True when the parent project is the active (visible) project. */
+  isProjectActive: boolean;
   /** True when this pane has keyboard focus. */
   active: boolean;
 }
@@ -37,6 +39,7 @@ export function TerminalView({
   cursorStyle,
   cursorBlink,
   isTabActive,
+  isProjectActive,
   active,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -45,6 +48,10 @@ export function TerminalView({
   const exitNoticeRef = useRef(false);
   const isTabActiveRef = useRef(isTabActive);
   isTabActiveRef.current = isTabActive;
+  const isProjectActiveRef = useRef(isProjectActive);
+  isProjectActiveRef.current = isProjectActive;
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const writeToSession = useSessionStore((state) => state.writeToSession);
   const resizeSession = useSessionStore((state) => state.resizeSession);
@@ -75,12 +82,29 @@ export function TerminalView({
     return () => clearTimeout(timer);
   }, [isTabActive, active, session.id, doFit]);
 
-  // ── Focus terminal when pane becomes active ──────────────────────────────
+  // ── Focus terminal when pane becomes active, tab becomes visible, or project switches ──
+  // Replaces a one-shot term.focus() — we also blur whatever element
+  // currently holds focus (often a button the user clicked to open
+  // the terminal or switch project/tab; that button keeps focus in
+  // Tauri's webview and suppresses the next focus call) and retry
+  // across multiple frames to win the race against React's commit
+  // and any webview-level focus re-assertion.
   useEffect(() => {
     const term = termRef.current;
-    if (!term || !active || !isTabActive) return;
-    term.focus();
-  }, [active, isTabActive]);
+    if (!term || !active || !isTabActive || !isProjectActive) return;
+    const focusNow = () => {
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement && activeEl !== term.textarea) {
+        activeEl.blur();
+      }
+      if (term.textarea) term.textarea.focus();
+      term.focus();
+    };
+    focusNow();
+    requestAnimationFrame(focusNow);
+    window.setTimeout(focusNow, 50);
+    window.setTimeout(focusNow, 200);
+  }, [active, isTabActive, isProjectActive]);
 
   // ── Main terminal setup (stable deps — only recreate on session change) ──
   useEffect(() => {
@@ -137,6 +161,49 @@ export function TerminalView({
     term.loadAddon(fitAddon);
     term.loadAddon(linksAddon);
     term.open(container);
+
+    // T2: focus the terminal as soon as it opens, when this pane is
+    // active and the tab is visible.  Done here (inside the main effect,
+    // after term.open) so we know termRef.current is non-null — the
+    // separate [active, isTabActive] effect at the top of the file runs
+    // BEFORE this one on first mount and bails out on null termRef, so
+    // it never focuses freshly opened terminals.
+    //
+    // Multiple attempts at different timings because Tauri's webview
+    // suppresses focus calls when a button still holds focus from the
+    // click that triggered the mount.  We also blur the current
+    // active element first so the webview can't re-assert it.
+    const focusNow = () => {
+      if (!activeRef.current || !isTabActiveRef.current || !isProjectActiveRef.current) return;
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement && activeEl !== term.textarea) {
+        activeEl.blur();
+      }
+      if (term.textarea) term.textarea.focus();
+      term.focus();
+    };
+    if (activeRef.current && isTabActiveRef.current && isProjectActiveRef.current) {
+      focusNow();
+      requestAnimationFrame(focusNow);
+      window.setTimeout(focusNow, 50);
+      window.setTimeout(focusNow, 200);
+      window.setTimeout(focusNow, 500);
+    }
+
+    // Belt-and-suspenders for multi-pane clicks: if the user mouses down
+    // on this terminal's container, focus it immediately rather than
+    // waiting for the click → state update → re-render → useEffect chain.
+    // xterm's own textarea should already handle this, but on some
+    // platforms the focus event is suppressed; this guarantees it.
+    const onContainerMouseDown = () => {
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement && activeEl !== term.textarea) {
+        activeEl.blur();
+      }
+      if (term.textarea) term.textarea.focus();
+      term.focus();
+    };
+    container.addEventListener("mousedown", onContainerMouseDown);
 
     // Write any existing log content that accumulated before the terminal
     // was mounted (e.g. session restore, tab switch catch-up).
@@ -300,6 +367,7 @@ export function TerminalView({
       container.removeEventListener("wheel", wheelHandler);
       container.removeEventListener("dragover", dragOverHandler);
       container.removeEventListener("drop", dropHandler);
+      container.removeEventListener("mousedown", onContainerMouseDown);
       term.dispose();
     };
     // Stable deps: only recreate the Terminal on session or pane identity change.

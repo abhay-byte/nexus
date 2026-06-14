@@ -71,6 +71,7 @@ If the client's IP is **not** in the list → instant `403 Forbidden`, no data s
   pr: https://github.com/abhay-byte/nexus/pull/1
   merged_into: v0.2.x
   merged_at_commit: ce1a1e5
+  followups: T2 (terminal focus)
   root_cause: |
     Three compounding bottlenecks:
     1. sessionStore.ts:196 — markSessionStatus("running") fires on EVERY PTY chunk,
@@ -89,5 +90,58 @@ If the client's IP is **not** in the list → instant `403 Forbidden`, no data s
       so xterm batches per-frame, freeing main thread between paints.
     - Fix 3 (backend, medium risk): coalesce PTY reads in 16ms windows before
       emitting; reduces emit count 10-50x for high-throughput commands.
+---
+- id: T2
+  title: Terminal focus not auto-set on open / not following last touched pane
+  type: bug
+  priority: high
+  difficulty: easy
+  frequency: always
+  expected: |
+    - Opening a new terminal pane auto-focuses the cursor into that terminal.
+    - In multi-pane view, the cursor/keystrokes go to the most recently
+      touched (clicked or focused) terminal.
+  actual: |
+    - New terminal panes don't auto-focus; user must click into them.
+    - In multi-pane, focus doesn't follow the last-touched terminal —
+      keystrokes may go to a stale pane.
+  reproduction: |
+    1. Open a project, split into 2+ terminal panes
+    2. Click into pane B, then click into pane A — type in A
+    3. Observe: keystrokes may go to B (or neither)
+    4. Open a new pane via "+" or terminal launch
+    5. Observe: new pane is not focused; cursor sits elsewhere
+  impact: Terminal UX; users must manually click every new pane and may
+    send input to the wrong terminal when switching
+  images: null
+  github_ref: null
+  plan: |
+    ### Goal
+    Auto-focus xterm cursor in a newly opened terminal pane; in multi-pane
+    view, the last-touched pane's terminal receives focus.
+
+    ### Root cause
+    TerminalView.tsx:79-83 focus useEffect runs BEFORE the main useEffect
+    (line 86-308) that creates the xterm instance. On first mount, termRef
+    is null when the focus effect runs, so term.focus() is silently
+    skipped. The effect doesn't re-run after the term is created.
+
+    ### Files to change
+    - MODIFY: src/components/PaneGrid/TerminalView.tsx
+
+    ### Approach
+    1. In the main useEffect after term.open(container), if active+isTabActive
+       call term.focus() inside requestAnimationFrame to ensure textarea
+       is in the DOM.
+    2. Keep existing focus useEffect (line 79-83) for click→active flips
+       on already-mounted panes.
+    3. Add explicit term.focus() in Pane's onClick via a ref passed to
+       TerminalView, as a belt-and-suspenders for multi-pane clicks.
+
+    ### Edge cases
+    - Tab hidden: isTabActive false → no focus
+    - Rapid tab/pane switches: rAF coalesces to one focus per frame
+    - Empty pane (no term): click falls through to agent buttons
+  status: in-progress
 ---
 ```
