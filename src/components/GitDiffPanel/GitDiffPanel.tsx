@@ -540,6 +540,7 @@ export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose,
   const [fileError, setFileError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const startResize = useCallback(
     (event: React.PointerEvent) => {
@@ -814,15 +815,37 @@ export const GitDiffPanel = memo(function GitDiffPanel({ open, project, onClose,
 
         {/* ── Footer ───────────────────────────────────────────────────────── */}
         <div className="p-6 border-t-8 border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#eee9e0] dark:bg-[#111] flex gap-3 items-center shrink-0">
-          <div className="flex-1 border-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#1a1a1a] dark:bg-[#f5f0e8] text-[#f5f0e8] dark:text-[#1a1a1a] p-4 flex items-center gap-3 shadow-[4px_4px_0px_0px_#ffcc00]">
+          <button
+            className="flex-1 border-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#1a1a1a] dark:bg-[#f5f0e8] text-[#f5f0e8] dark:text-[#1a1a1a] p-4 flex items-center gap-3 shadow-[4px_4px_0px_0px_#ffcc00] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-left transition-none"
+            onClick={() => {
+              if (!diffResult || !project) return;
+              const files = diffResult.files;
+              const lines = files.map(f => {
+                const icon = f.status === "added" ? "+" : f.status === "deleted" ? "−" : f.status === "renamed" ? "→" : "~";
+                return `${icon} ${f.path} (${f.status}, +${f.additions}/-${f.deletions})`;
+              }).join("\n");
+              navigator.clipboard.writeText(`commit all changes with a descriptive message\n\nBranch: ${diffResult.branch}\n\nChanged files (${files.length}):\n${lines}\n\nTotal: +${diffResult.total_additions} / -${diffResult.total_deletions} lines\n\nInstructions:\n1. \`git add -A\`\n2. \`git commit -m "feat: descriptive message"\`\n3. \`git push\``).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              });
+            }}
+            disabled={!diffResult}
+            title="Copy commit instructions"
+            type="button"
+          >
             <span className="material-symbols-outlined text-[#ffcc00] dark:text-[#1a1a1a] shrink-0">smart_toy</span>
             <div>
-              <p className="font-['Space_Grotesk'] font-black text-sm uppercase">Ask Agent to Commit</p>
+              <p className="font-['Space_Grotesk'] font-black text-sm uppercase">
+                {copied ? "✓ Copied!" : "Ask Agent to Commit"}
+              </p>
               <p className="font-mono text-[10px] opacity-60 mt-0.5">
-                Tell your agent: <em>"commit all changes with a descriptive message"</em>
+                {copied
+                  ? "Commit message + instructions copied to clipboard"
+                  : `Click to copy: "commit all changes with a descriptive message"`
+                }
               </p>
             </div>
-          </div>
+          </button>
           <button
             className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] p-3 hover:bg-[#ffcc00] dark:text-[#f5f0e8] dark:hover:text-[#1a1a1a] dark:bg-[#0e0e0e] bg-white transition-none disabled:opacity-50"
             onClick={() => void fetchDiff()}

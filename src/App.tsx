@@ -147,12 +147,14 @@ function App() {
   }, [initializeProjects]);
 
   useEffect(() => {
+    if (!bootstrapped) return;
     if (settings.theme === "dark") {
       document.documentElement.classList.add("dark");
     } else {
       document.documentElement.classList.remove("dark");
     }
-  }, [settings.theme]);
+    localStorage.setItem("nexus-theme", settings.theme);
+  }, [settings.theme, bootstrapped]);
 
   useEffect(() => {
     if (!bootstrapped) {
