@@ -1,6 +1,6 @@
 [package]
 name = "nexus"
-version = "0.2.0"
+version = "0.2.1"
 description = "Nexus multi-project AI agent workspace"
 authors = ["abhay"]
 edition = "2021"

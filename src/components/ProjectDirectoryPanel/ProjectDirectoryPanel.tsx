@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { isTauri, httpApi } from "../../lib/api";
+import { getImageDataUrl } from "../../lib/imageDataUrl";
 import type { Project } from "../../types";
 
 interface DirEntry {
@@ -8,6 +9,8 @@ interface DirEntry {
   isFile: boolean;
   children?: DirEntry[];
   expanded?: boolean;
+  loaded?: boolean;
+  error?: string;
 }
 
 interface ProjectDirectoryPanelProps {
@@ -23,11 +26,15 @@ interface IconInfo {
   color: string;
 }
 
+const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|bmp|webp|svg|ico|tiff?)$/i;
+
 function fileIcon(name: string, isDir: boolean): IconInfo {
   if (isDir) return { icon: "folder", color: "text-[#d19a66] dark:text-[#e5c07b]" };
   const lower = name.toLowerCase();
-  if (/\.(png|jpg|jpeg|bmp|webp|svg|ico|tiff?)$/i.test(lower)) return { icon: "image", color: "text-[#3b8eea] dark:text-[#61afef]" };
-  if (/\.gif$/i.test(lower)) return { icon: "gif", color: "text-[#c678dd] dark:text-[#d670d6]" };
+  if (IMAGE_EXTENSIONS.test(lower)) {
+    if (/\.gif$/i.test(lower)) return { icon: "gif", color: "text-[#c678dd] dark:text-[#d670d6]" };
+    return { icon: "image", color: "text-[#3b8eea] dark:text-[#61afef]" };
+  }
   if (/\.(mp4|mov|avi|mkv|webm|flv|wmv)$/i.test(lower)) return { icon: "movie", color: "text-[#e06c75] dark:text-[#f14c4c]" };
   if (/\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(lower)) return { icon: "music_note", color: "text-[#98c379] dark:text-[#23d18b]" };
   if (/\.(zip|rar|7z|tar\.gz|tgz|tar|gz|bz2|xz|jar|war|ear|deb|rpm)$/i.test(lower)) return { icon: "folder_zip", color: "text-[#d19a66] dark:text-[#e5c07b]" };
@@ -44,50 +51,28 @@ function isTextFile(name: string): boolean {
   return /\.(rs|ts|tsx|js|jsx|py|go|java|c|cpp|h|hpp|cs|rb|php|swift|kt|scala|lua|vim|elixir|ex|exs|erl|clj|groovy|dart|sql|graphql|yaml|yml|toml|ini|cfg|conf|json|xml|html|htm|css|scss|sass|less|md|markdown|rst|txt|log|csv|diff|patch)$/i.test(lower);
 }
 
-async function readDirectoryRecursive(
-  path: string,
-  depth = 0,
-  maxDepth = 2,
-): Promise<DirEntry[]> {
-  if (depth > maxDepth) return [];
-  try {
-    let entries: Array<{ name: string; isDirectory: boolean; isFile: boolean }>;
-    if (isTauri()) {
-      const fs = await import("@tauri-apps/plugin-fs");
-      entries = (await fs.readDir(path)).map((e: any) => ({
-        name: e.name,
-        isDirectory: e.isDirectory,
-        isFile: e.isFile,
-      }));
-    } else {
-      entries = await httpApi.post<Array<{ name: string; isDirectory: boolean; isFile: boolean }>>(
-        "/api/fs/read-dir",
-        { path }
-      );
-    }
-    const results: DirEntry[] = [];
-    for (const entry of entries) {
-      const isDir = entry.isDirectory;
-      const item: DirEntry = {
-        name: entry.name,
-        isDirectory: isDir,
-        isFile: entry.isFile,
-      };
-      if (isDir && depth < maxDepth) {
-        const childPath = path.replace(/\\/g, "/").replace(/\/$/, "") + "/" + entry.name;
-        item.children = await readDirectoryRecursive(childPath, depth + 1, maxDepth);
-        item.expanded = false;
-      }
-      results.push(item);
-    }
-    return results.sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
-  } catch {
-    return [];
-  }
+function isImageFile(name: string): boolean {
+  return IMAGE_EXTENSIONS.test(name.toLowerCase());
+}
+
+async function readDir(path: string): Promise<DirEntry[]> {
+  // Use HTTP API even in Tauri mode — the internal server uses raw Rust std::fs
+  // which doesn't have Tauri plugin-fs scope restrictions on dot-directories.
+  const entries = await httpApi.post<Array<{ name: string; isDirectory: boolean; isFile: boolean }>>(
+    "/api/fs/read-dir",
+    { path }
+  );
+  const results: DirEntry[] = entries.map((entry) => ({
+    name: entry.name,
+    isDirectory: entry.isDirectory,
+    isFile: entry.isFile,
+    children: undefined,
+  }));
+  return results.sort((a, b) => {
+    if (a.isDirectory && !b.isDirectory) return -1;
+    if (!a.isDirectory && b.isDirectory) return 1;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 function TreeNode({
@@ -106,7 +91,10 @@ function TreeNode({
   const path = prefix ? `${prefix}/${entry.name}` : entry.name;
   const { icon, color } = fileIcon(entry.name, entry.isDirectory);
 
-  if (entry.isDirectory && entry.children) {
+  if (entry.isDirectory) {
+    const hasChildren = entry.children && entry.children.length > 0;
+    const isLoading = entry.expanded && entry.children === undefined;
+
     return (
       <div>
         <div
@@ -120,16 +108,25 @@ function TreeNode({
           onContextMenu={(e) => onContextMenu(e, path, entry.name, true)}
         >
           <span className="material-symbols-outlined text-[13px] text-[#888]" style={{ fontSize: "13px" }}>
-            {entry.expanded ? "expand_more" : "chevron_right"}
+            {entry.loaded && !hasChildren ? "" : isLoading ? "hourglass" : entry.expanded ? "expand_more" : "chevron_right"}
           </span>
           <span className={`material-symbols-outlined text-[13px] ${color}`} style={{ fontSize: "13px" }}>
-            {icon}
+            {entry.expanded && entry.children !== undefined ? "folder_open" : icon}
           </span>
           <span className="font-mono text-[11px] truncate">{entry.name}</span>
+          {isLoading && (
+            <span className="material-symbols-outlined text-[10px] text-[#888] animate-spin" style={{ fontSize: "10px" }}>progress_activity</span>
+          )}
+          {entry.error && (
+            <span className="font-mono text-[9px] text-[#e06c75] ml-1 truncate" title={entry.error}>{entry.error}</span>
+          )}
+          {entry.loaded && !hasChildren && !entry.error && (
+            <span className="font-mono text-[9px] text-[#888] ml-1">empty</span>
+          )}
         </div>
-        {entry.expanded && (
+        {entry.expanded && hasChildren && (
           <div className="pl-3">
-            {entry.children.map((child) => (
+            {entry.children!.map((child) => (
               <TreeNode
                 key={child.name}
                 entry={child}
@@ -189,7 +186,6 @@ export function ProjectDirectoryPanel({
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -198,22 +194,80 @@ export function ProjectDirectoryPanel({
     isDirectory: boolean;
   } | null>(null);
 
-  // Preview modal state
-  const [preview, setPreview] = useState<{
+  const [textPreview, setTextPreview] = useState<{
     path: string;
     name: string;
     content: string;
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  const [imagePreview, setImagePreview] = useState<{
+    path: string;
+    name: string;
+    dataUrl: string | null;
+  } | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
+
   const projectPath = project?.path ?? null;
+
+  // Helper: resolve full absolute path from a relative tree path
+  const resolveFullPath = useCallback(
+    (relativePath: string) => {
+      const root = projectPath!.replace(/\\/g, "/").replace(/\/$/, "");
+      return `${root}/${relativePath}`;
+    },
+    [projectPath],
+  );
+
+  // Helper: find a node in the tree by its relative path
+  const findNode = useCallback(
+    (relativePath: string): DirEntry | null => {
+      const parts = relativePath.split("/");
+      let current: DirEntry[] = entries;
+      for (let i = 0; i < parts.length; i++) {
+        const found = current.find((e) => e.name === parts[i]);
+        if (!found) return null;
+        if (i === parts.length - 1) return found;
+        if (!found.children) return null;
+        current = found.children;
+      }
+      return null;
+    },
+    [entries],
+  );
+
+  // Helper: mutate the tree state to attach children to a specific path
+  const attachChildren = useCallback(
+    (relativePath: string, children: DirEntry[], error?: string) => {
+      if (relativePath === "") {
+        setEntries(children);
+        return;
+      }
+      setEntries((prev) => {
+        const parts = relativePath.split("/");
+        const updateNode = (list: DirEntry[], idx: number): DirEntry[] => {
+          return list.map((entry) => {
+            if (entry.name !== parts[idx]) return entry;
+            if (idx === parts.length - 1) {
+              return { ...entry, children, loaded: true, error: error ?? entry.error };
+            }
+            if (entry.children) {
+              return { ...entry, children: updateNode(entry.children, idx + 1) };
+            }
+            return entry;
+          });
+        };
+        return updateNode(prev, 0);
+      });
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     if (!projectPath) return;
     setLoading(true);
     try {
-      const root = projectPath.replace(/\\/g, "/").replace(/\/$/, "");
-      const result = await readDirectoryRecursive(root, 0, 3);
+      const result = await readDir(projectPath);
       setEntries(result);
     } catch {
       setEntries([]);
@@ -222,11 +276,28 @@ export function ProjectDirectoryPanel({
     }
   }, [projectPath]);
 
+  // Load children of a directory on demand
+  const loadChildren = useCallback(
+    async (relativePath: string) => {
+      const fullPath = resolveFullPath(relativePath);
+      try {
+        const children = await readDir(fullPath);
+        attachChildren(relativePath, children);
+      } catch (err) {
+        console.error(`Failed to read directory: ${fullPath}`, err);
+        const msg = err instanceof Error ? err.message : String(err);
+        attachChildren(relativePath, [], msg);
+      }
+    },
+    [resolveFullPath, attachChildren],
+  );
+
   useEffect(() => {
     if (!collapsed && projectPath) {
       void load();
     }
-  }, [collapsed, projectPath, load]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collapsed, projectPath]);
 
   const togglePath = useCallback(
     (path: string) => {
@@ -239,8 +310,14 @@ export function ProjectDirectoryPanel({
         }
         return next;
       });
+
+      // Lazy load: if expanding a directory that hasn't been loaded yet
+      const node = findNode(path);
+      if (node && node.isDirectory && node.children === undefined) {
+        void loadChildren(path);
+      }
     },
-    [setExpandedPaths],
+    [findNode, loadChildren],
   );
 
   const buildVisibleTree = useCallback(
@@ -248,9 +325,11 @@ export function ProjectDirectoryPanel({
       return list.map((entry) => {
         const path = prefix ? `${prefix}/${entry.name}` : entry.name;
         const copy = { ...entry };
-        if (entry.isDirectory && entry.children) {
+        if (entry.isDirectory) {
           copy.expanded = expandedPaths.has(path);
-          copy.children = buildVisibleTree(entry.children, path);
+          if (entry.children) {
+            copy.children = buildVisibleTree(entry.children, path);
+          }
         }
         return copy;
       });
@@ -267,9 +346,7 @@ export function ProjectDirectoryPanel({
     return flat.filter(({ entry }) => entry.name.toLowerCase().includes(q));
   }, [entries, searchQuery]);
 
-  const handleDragStart = useCallback((path: string) => {
-    void path;
-  }, []);
+  const handleDragStart = useCallback((_path: string) => {}, []);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, path: string, name: string, isDirectory: boolean) => {
@@ -283,8 +360,7 @@ export function ProjectDirectoryPanel({
   const handleOpenInEditor = useCallback(
     async (relativePath: string) => {
       if (!project || !isTauri()) return;
-      const root = project.path.replace(/\\/g, "/").replace(/\/$/, "");
-      const fullPath = `${root}/${relativePath}`;
+      const fullPath = resolveFullPath(relativePath);
       try {
         const shell = await import("@tauri-apps/plugin-shell");
         await shell.open(fullPath);
@@ -293,33 +369,43 @@ export function ProjectDirectoryPanel({
       }
       setContextMenu(null);
     },
-    [project],
+    [project, resolveFullPath],
   );
 
-  const handlePreview = useCallback(
+  const handleTextPreview = useCallback(
     async (relativePath: string, name: string) => {
       if (!project) return;
-      const root = project.path.replace(/\\/g, "/").replace(/\/$/, "");
-      const fullPath = `${root}/${relativePath}`;
+      const fullPath = resolveFullPath(relativePath);
       setPreviewLoading(true);
       setContextMenu(null);
       try {
-        let content: string;
-        if (isTauri()) {
-          const fs = await import("@tauri-apps/plugin-fs");
-          content = await fs.readTextFile(fullPath);
-        } else {
-          const result = await httpApi.post<{ contents: string }>("/api/fs/read-text-file", { path: fullPath });
-          content = result.contents;
-        }
-        setPreview({ path: relativePath, name, content });
+        const result = await httpApi.post<{ contents: string }>("/api/fs/read-text-file", { path: fullPath });
+        setTextPreview({ path: relativePath, name, content: result.contents });
       } catch (error) {
-        setPreview({ path: relativePath, name, content: `Error reading file: ${error instanceof Error ? error.message : String(error)}` });
+        setTextPreview({ path: relativePath, name, content: `Error reading file: ${error instanceof Error ? error.message : String(error)}` });
       } finally {
         setPreviewLoading(false);
       }
     },
-    [project],
+    [project, resolveFullPath],
+  );
+
+  const handleImagePreview = useCallback(
+    async (relativePath: string, name: string) => {
+      if (!project) return;
+      const fullPath = resolveFullPath(relativePath);
+      setImageLoading(true);
+      setContextMenu(null);
+      try {
+        const dataUrl = await getImageDataUrl(fullPath);
+        setImagePreview({ path: relativePath, name, dataUrl });
+      } catch {
+        setImagePreview({ path: relativePath, name, dataUrl: null });
+      } finally {
+        setImageLoading(false);
+      }
+    },
+    [project, resolveFullPath],
   );
 
   const handleMouseDown = useCallback(
@@ -344,13 +430,14 @@ export function ProjectDirectoryPanel({
     [width, onResizeWidth],
   );
 
-  // Close context menu on outside click
   useEffect(() => {
     if (!contextMenu) return;
     const handler = () => setContextMenu(null);
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
   }, [contextMenu]);
+
+  const contextMenuFileName = contextMenu?.name ?? "";
 
   if (collapsed || !project) {
     return null;
@@ -482,43 +569,49 @@ export function ProjectDirectoryPanel({
           >
             Open in Editor
           </button>
-          {isTextFile(contextMenu.name) && (
+          {isTextFile(contextMenuFileName) && (
             <button
               className="w-full text-left font-['Space_Grotesk'] font-bold uppercase px-4 py-2 hover:bg-[#ffcc00] hover:text-[#1a1a1a] border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8]"
-              onClick={() => handlePreview(contextMenu.path, contextMenu.name)}
+              onClick={() => handleTextPreview(contextMenu.path, contextMenuFileName)}
               type="button"
             >
-              Preview
+              Preview Text
+            </button>
+          )}
+          {isImageFile(contextMenuFileName) && (
+            <button
+              className="w-full text-left font-['Space_Grotesk'] font-bold uppercase px-4 py-2 hover:bg-[#ffcc00] hover:text-[#1a1a1a] border-2 border-transparent hover:border-[#1a1a1a] text-[#1a1a1a] dark:text-[#f5f0e8]"
+              onClick={() => handleImagePreview(contextMenu.path, contextMenuFileName)}
+              type="button"
+            >
+              Preview Image
             </button>
           )}
         </div>
       )}
 
-      {/* Preview modal */}
-      {preview && (
+      {/* Text preview modal */}
+      {textPreview && (
         <div
           className="fixed inset-0 bg-[#1a1a1a]/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4"
-          onClick={() => setPreview(null)}
+          onClick={() => setTextPreview(null)}
         >
           <div
             className="w-full max-w-3xl bg-[#f5f0e8] dark:bg-[#1a1a1a] border-8 border-[#1a1a1a] dark:border-[#f5f0e8] flex flex-col shadow-[8px_8px_0px_0px_#1a1a1a] dark:shadow-[8px_8px_0px_0px_#f5f0e8] max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal header */}
             <div className="bg-[#1a1a1a] dark:bg-[#f5f0e8] text-white dark:text-[#1a1a1a] p-4 flex justify-between items-center shrink-0">
               <h3 className="font-['Space_Grotesk'] font-bold uppercase text-lg tracking-tighter truncate">
-                {preview.name}
+                {textPreview.name}
               </h3>
               <button
                 className="material-symbols-outlined hover:text-[#e63b2e]"
-                onClick={() => setPreview(null)}
+                onClick={() => setTextPreview(null)}
                 type="button"
               >
                 close
               </button>
             </div>
-
-            {/* Content */}
             <div className="p-4 overflow-auto flex-1">
               {previewLoading ? (
                 <div className="flex items-center justify-center py-8">
@@ -526,23 +619,78 @@ export function ProjectDirectoryPanel({
                 </div>
               ) : (
                 <pre className="font-mono text-[11px] leading-relaxed text-[#1a1a1a] dark:text-[#f5f0e8] whitespace-pre-wrap break-words">
-                  {preview.content}
+                  {textPreview.content}
                 </pre>
               )}
             </div>
-
-            {/* Footer */}
             <div className="p-4 border-t-4 border-[#1a1a1a] dark:border-[#f5f0e8] flex justify-end gap-3 shrink-0">
               <button
                 className="px-6 py-2 font-black uppercase tracking-widest border-4 border-transparent hover:border-[#1a1a1a] dark:hover:border-[#f5f0e8] hover:bg-white dark:hover:bg-[#121212] transition-all text-[#1a1a1a] dark:text-[#f5f0e8]"
-                onClick={() => setPreview(null)}
+                onClick={() => setTextPreview(null)}
                 type="button"
               >
                 Close
               </button>
               <button
                 className="bg-[#0055ff] text-white border-4 border-[#1a1a1a] dark:border-[#f5f0e8] px-6 py-2 font-black uppercase neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all"
-                onClick={() => handleOpenInEditor(preview.path)}
+                onClick={() => handleOpenInEditor(textPreview.path)}
+                type="button"
+              >
+                Open in Editor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image preview modal */}
+      {imagePreview && (
+        <div
+          className="fixed inset-0 bg-[#1a1a1a]/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4"
+          onClick={() => setImagePreview(null)}
+        >
+          <div
+            className="w-full max-w-4xl bg-[#f5f0e8] dark:bg-[#1a1a1a] border-8 border-[#1a1a1a] dark:border-[#f5f0e8] flex flex-col shadow-[8px_8px_0px_0px_#1a1a1a] dark:shadow-[8px_8px_0px_0px_#f5f0e8] max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-[#1a1a1a] dark:bg-[#f5f0e8] text-white dark:text-[#1a1a1a] p-4 flex justify-between items-center shrink-0">
+              <h3 className="font-['Space_Grotesk'] font-bold uppercase text-lg tracking-tighter truncate">
+                {imagePreview.name}
+              </h3>
+              <button
+                className="material-symbols-outlined hover:text-[#e63b2e]"
+                onClick={() => setImagePreview(null)}
+                type="button"
+              >
+                close
+              </button>
+            </div>
+            <div className="p-4 overflow-auto flex-1 flex items-center justify-center bg-[#0d0d0d]/20 dark:bg-[#2a2a2a]">
+              {imageLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <span className="material-symbols-outlined animate-spin text-[#888] text-2xl">sync</span>
+                </div>
+              ) : imagePreview.dataUrl ? (
+                <img
+                  src={imagePreview.dataUrl}
+                  alt={imagePreview.name}
+                  className="max-w-full max-h-[70vh] object-contain"
+                />
+              ) : (
+                <div className="font-mono text-[#e06c75]">Failed to load image</div>
+              )}
+            </div>
+            <div className="p-4 border-t-4 border-[#1a1a1a] dark:border-[#f5f0e8] flex justify-end gap-3 shrink-0">
+              <button
+                className="px-6 py-2 font-black uppercase tracking-widest border-4 border-transparent hover:border-[#1a1a1a] dark:hover:border-[#f5f0e8] hover:bg-white dark:hover:bg-[#121212] transition-all text-[#1a1a1a] dark:text-[#f5f0e8]"
+                onClick={() => setImagePreview(null)}
+                type="button"
+              >
+                Close
+              </button>
+              <button
+                className="bg-[#0055ff] text-white border-4 border-[#1a1a1a] dark:border-[#f5f0e8] px-6 py-2 font-black uppercase neo-shadow dark:shadow-[4px_4px_0px_0px_#f5f0e8] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all"
+                onClick={() => handleOpenInEditor(imagePreview.path)}
                 type="button"
               >
                 Open in Editor

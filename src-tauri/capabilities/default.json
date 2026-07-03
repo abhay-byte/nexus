@@ -18,6 +18,7 @@
     "fs:default",
     "shell:default",
     "shell:allow-open",
+    "fs:allow-read-dir",
     "fs:allow-mkdir",
     "fs:allow-read-text-file",
     "fs:allow-read-file",
