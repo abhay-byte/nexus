@@ -44,7 +44,7 @@ function ConfirmDialog({ item, onConfirm, onCancel, loading }: { item: ConfirmDe
 
 export function PlankaSetup({ projectName, initialConfig, onConnect, onCancel }: Props) {
   const [step, setStep] = useState<WizardStep>("credentials");
-  const [baseUrl, setBaseUrl] = useState(initialConfig?.baseUrl || "https://planka-latest-3twn.onrender.com");
+  const [baseUrl, setBaseUrl] = useState(initialConfig?.baseUrl || "");
   const [email, setEmail] = useState(initialConfig?.email || "");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState("");

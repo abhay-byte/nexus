@@ -655,6 +655,15 @@ fn handle_api(
             save_web_state(&state);
             json_response(&serde_json::json!({ "success": true }), StatusCode(200))
         }
+        ("POST", "/api/kanban/refresh") => {
+            let persisted = load_web_state();
+            let mut state = web_state.lock().unwrap();
+            state.kanban_tasks = persisted.kanban_tasks;
+            if let Some(ref ws) = ws_state {
+                ws.broadcast_text(serde_json::json!({"event": "kanban-refresh"}).to_string());
+            }
+            json_response(&state.kanban_tasks, StatusCode(200))
+        }
 
         // ── Tauri Command Proxies (browser mode) ──
         ("POST", "/api/system-health") => {

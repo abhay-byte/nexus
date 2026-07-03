@@ -37,5 +37,182 @@
       "agency_agent": null
     }
   ],
-  "kanban_tasks": []
+  "kanban_tasks": [
+    {
+      "id": "kb-t1",
+      "project_id": "3RBcoICnjl0fGfiDf60RF",
+      "title": "Fix kernel module loading",
+      "description": null,
+      "status": "todo",
+      "color": null
+    },
+    {
+      "id": "kb-t2",
+      "project_id": "3RBcoICnjl0fGfiDf60RF",
+      "title": "Add GPU frequency monitoring",
+      "description": null,
+      "status": "todo",
+      "color": null
+    },
+    {
+      "id": "kb-t3",
+      "project_id": "3RBcoICnjl0fGfiDf60RF",
+      "title": "Refactor sysfs path detection",
+      "description": null,
+      "status": "todo",
+      "color": null
+    },
+    {
+      "id": "kb-t4",
+      "project_id": "3RBcoICnjl0fGfiDf60RF",
+      "title": "Implement CPU governor switching",
+      "description": null,
+      "status": "in-progress",
+      "color": null
+    },
+    {
+      "id": "kb-t5",
+      "project_id": "3RBcoICnjl0fGfiDf60RF",
+      "title": "Fix thermal zone readouts",
+      "description": null,
+      "status": "in-progress",
+      "color": null
+    },
+    {
+      "id": "kb-t6",
+      "project_id": "3RBcoICnjl0fGfiDf60RF",
+      "title": "Add GPU frequency reader",
+      "description": null,
+      "status": "done",
+      "color": null
+    },
+    {
+      "id": "kb-t7",
+      "project_id": "3RBcoICnjl0fGfiDf60RF",
+      "title": "Root permission escalation fix",
+      "description": null,
+      "status": "blocked",
+      "color": null
+    },
+    {
+      "id": "mkm-t1",
+      "project_id": "rcmN1wL7OKNu7e3A36T5F",
+      "title": "Investigate kernel module crash on boot",
+      "description": null,
+      "status": "todo",
+      "color": null
+    },
+    {
+      "id": "mkm-t2",
+      "project_id": "rcmN1wL7OKNu7e3A36T5F",
+      "title": "Add OnePlus 12 sensor offsets",
+      "description": null,
+      "status": "todo",
+      "color": null
+    },
+    {
+      "id": "mkm-t3",
+      "project_id": "rcmN1wL7OKNu7e3A36T5F",
+      "title": "Build GPU freq table for Snapdragon 8 Gen 3",
+      "description": null,
+      "status": "in-progress",
+      "color": null
+    },
+    {
+      "id": "mkm-t4",
+      "project_id": "rcmN1wL7OKNu7e3A36T5F",
+      "title": "Fix thermal throttling readouts",
+      "description": null,
+      "status": "in-progress",
+      "color": null
+    },
+    {
+      "id": "mkm-t5",
+      "project_id": "rcmN1wL7OKNu7e3A36T5F",
+      "title": "Implement CPU governor switching",
+      "description": null,
+      "status": "done",
+      "color": null
+    },
+    {
+      "id": "mkm-t6",
+      "project_id": "rcmN1wL7OKNu7e3A36T5F",
+      "title": "Sysfs permission workaround for non-root",
+      "description": null,
+      "status": "blocked",
+      "color": null
+    },
+    {
+      "id": "ab-test-1",
+      "project_id": "3RBcoICnjl0fGfiDf60RF",
+      "title": "Test task from curl",
+      "description": null,
+      "status": "todo",
+      "color": null
+    },
+    {
+      "id": "tujGtfz5WykJ1N57Twmj3",
+      "project_id": "JoJ4f6O1iQsUCFILWAWKX",
+      "title": "Test task from API",
+      "description": null,
+      "status": "todo",
+      "color": null
+    },
+    {
+      "id": "CoVKXZXRabGMX_3-IsEae",
+      "project_id": "JoJ4f6O1iQsUCFILWAWKX",
+      "title": "GUI refresh test from API",
+      "description": null,
+      "status": "in-progress",
+      "color": null
+    },
+    {
+      "id": "Qp5by9nshk1rN54jl2aD4",
+      "project_id": "JoJ4f6O1iQsUCFILWAWKX",
+      "title": "Auto-refresh WS test",
+      "description": null,
+      "status": "todo",
+      "color": null
+    },
+    {
+      "id": "FBXv9ZrRm8-yXjGotZXXL",
+      "project_id": "JoJ4f6O1iQsUCFILWAWKX",
+      "title": "WS auto-refresh FINAL test",
+      "description": null,
+      "status": "blocked",
+      "color": null
+    },
+    {
+      "id": "FBCMc9t1g_LYLLpwhxxIy",
+      "project_id": "JoJ4f6O1iQsUCFILWAWKX",
+      "title": "Third task - final test",
+      "description": null,
+      "status": "in-progress",
+      "color": null
+    },
+    {
+      "id": "8WdeLa9gf8j_YxENWIAqb",
+      "project_id": "JoJ4f6O1iQsUCFILWAWKX",
+      "title": "Live refresh test via WS",
+      "description": null,
+      "status": "done",
+      "color": null
+    },
+    {
+      "id": "pb-RvxLWo9x917ZldR6kT",
+      "project_id": "JoJ4f6O1iQsUCFILWAWKX",
+      "title": "TEST-TASK-123 via API",
+      "description": null,
+      "status": "done",
+      "color": null
+    },
+    {
+      "id": "wl9GkF60jK5-lcWGp20ab",
+      "project_id": "3RBcoICnjl0fGfiDf60RF",
+      "title": "TEST from correct project ID",
+      "description": null,
+      "status": "done",
+      "color": null
+    }
+  ]
 }

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { KANBAN_COLUMNS, type KanbanStatus, useKanbanStore } from "../../store/kanbanStore";
+import { listen } from "../../lib/api";
 import { PlankaSetup } from "./PlankaSetup";
 import { PlankaInstructions } from "./PlankaInstructions";
+import { LocalKanbanInstructions } from "./LocalKanbanInstructions";
 import { useProjectStore } from "../../store/projectStore";
 import {
   setPlankaConfig, plankaFetchAllBoardData, plankaCreateCard, plankaMoveCard,
@@ -38,6 +40,22 @@ function LocalKanbanBoard({ projectId, projectName }: { projectId: string; proje
 
   const [showSetup, setShowSetup] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
+
+  useEffect(() => {
+    // Force-clear stale in-memory state, then sync from server.
+    // This ensures HMR / restarts never show old persist data.
+    useKanbanStore.setState({ tasks: [] });
+    useKanbanStore.getState().syncFromServer();
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("kanban-refresh", () => {
+      useKanbanStore.getState().syncFromServer();
+    }).then((fn) => { unlisten = fn; });
+    return () => unlisten?.();
+  }, []);
+
   const [drafts, setDrafts] = useState<Record<KanbanStatus, string>>({ todo: "", "in-progress": "", done: "", blocked: "" });
   const [adding, setAdding] = useState<KanbanStatus | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -63,12 +81,13 @@ function LocalKanbanBoard({ projectId, projectName }: { projectId: string; proje
   return (
     <>
       {showSetup && (<PlankaSetup projectId={projectId} projectName={projectName} onConnect={handlePlankaConnect} onCancel={() => setShowSetup(false)} />)}
-      {showInstructions && (<PlankaInstructions onClose={() => setShowInstructions(false)} />)}
+      {showInstructions && (<LocalKanbanInstructions projectId={projectId} projectName={projectName} onClose={() => setShowInstructions(false)} />)}
       <div className="flex flex-col h-full bg-[#f5f0e8] dark:bg-[#0d0d0d] overflow-hidden">
         <div className="flex items-center gap-4 px-6 py-3 border-b-2 border-black dark:border-[#333] shrink-0">
           <span className="font-['Space_Grotesk'] font-black text-xs uppercase tracking-widest text-[#ffcc00]">◈ Kanban</span>
           <span className="text-[#444] text-xs font-mono">— {projectName}</span>
           <span className="ml-auto text-[#444] text-xs font-mono">{tasks.length} tasks</span>
+          <button onClick={() => { useKanbanStore.getState().syncFromServer(); }} className="text-[9px] font-['Space_Grotesk'] font-black uppercase px-2 py-1 border border-[#ccc] dark:border-[#444] text-[#888] hover:text-[#ffcc00] hover:border-[#ffcc00]" type="button" title="Refresh">↻</button>
           <button onClick={() => setShowInstructions(true)} className="text-[9px] font-['Space_Grotesk'] font-black uppercase px-2 py-1 border border-[#888] dark:border-[#555] text-[#888] hover:text-[#ffcc00] hover:border-[#ffcc00]" type="button" title="Agent instructions">?</button>
           <button onClick={() => setShowSetup(true)} className="text-[9px] font-['Space_Grotesk'] font-black uppercase px-2 py-1 border border-[#ffcc00] text-[#ffcc00] hover:bg-[#ffcc00] hover:text-[#1a1a1a] ml-2" type="button">+ Connect Planka</button>
         </div>

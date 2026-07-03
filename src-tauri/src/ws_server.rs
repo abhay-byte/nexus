@@ -54,6 +54,13 @@ impl WsState {
             let _ = tx.send(Message::Text(text));
         }
     }
+
+    pub fn broadcast_text(&self, text: String) {
+        let sessions = self.sessions.lock().unwrap();
+        for tx in sessions.values() {
+            let _ = tx.send(Message::Text(text.clone()));
+        }
+    }
 }
 
 /// Start WebSocket server for terminal streaming

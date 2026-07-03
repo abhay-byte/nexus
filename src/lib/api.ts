@@ -146,7 +146,13 @@ function ensureSharedWs(): WebSocket {
           }
           cbs?.forEach((cb) => cb(Array.from(bytes)));
         } else {
-          dbg('ws', `← unhandled event=${parsed.event}`);
+          // Route any other event by name (kanban-refresh, etc.)
+          const cbs = wsListeners.get(parsed.event);
+          if (cbs && cbs.size > 0) {
+            cbs.forEach((cb) => cb(parsed.payload));
+          } else {
+            dbg('ws', `← unhandled event=${parsed.event}`);
+          }
         }
       } catch {
         dbgWarn('ws', `malformed JSON: ${e.data.slice(0, 80)}`);
@@ -275,12 +281,7 @@ export function wsKill(sessionId: string): void {
 
 /** Tauri-style event listener that works in browser mode via WebSocket */
 export async function listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<() => void> {
-  if (isTauri()) {
-    const { listen: tauriListen } = await import("@tauri-apps/api/event");
-    return tauriListen(event, handler);
-  }
-
-  // Browser mode: use WebSocket event bridge
+  // Also register with wsListeners so WebSocket broadcasts work in both modes
   ensureSharedWs();
 
   const cb = (payload: unknown) => {
@@ -294,11 +295,19 @@ export async function listen<T>(event: string, handler: (event: { payload: T }) 
   }
   cbs.add(cb);
 
+  let tauriUnlisten: (() => void) | undefined;
+
+  if (isTauri()) {
+    const { listen: tauriListen } = await import("@tauri-apps/api/event");
+    tauriUnlisten = await tauriListen(event, handler);
+  }
+
   return () => {
     cbs?.delete(cb);
     if (cbs && cbs.size === 0) {
       wsListeners.delete(event);
     }
+    tauriUnlisten?.();
   };
 }
 
