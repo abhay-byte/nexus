@@ -49,6 +49,51 @@ export interface SpecKitProjectConfig {
   agentId: AgentId | null;
 }
 
+export interface PlankaConfig {
+  baseUrl: string;
+  email: string;
+  password?: string;
+  token?: string;
+  selectedProjectId?: string;
+  selectedProjectName?: string;
+  selectedBoardId?: string;
+  selectedBoardName?: string;
+}
+
+export interface PlankaProject {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface PlankaBoard {
+  id: string;
+  name: string;
+  position: number;
+  projectId: string;
+}
+
+export interface PlankaList {
+  id: string;
+  name: string;
+  position: number;
+  boardId: string;
+  type: string;
+}
+
+export interface PlankaCard {
+  id: string;
+  name: string;
+  description?: string;
+  position: number;
+  listId: string;
+  boardId: string;
+  dueDate?: string | null;
+  isClosed: boolean;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -60,6 +105,7 @@ export interface Project {
   mcpServers: McpServerConfig[];
   agencyAgent?: AgencyAgentProjectConfig;
   specKit?: SpecKitProjectConfig;
+  planka?: PlankaConfig;
   createdAt: number;
   sortOrder: number;
 }

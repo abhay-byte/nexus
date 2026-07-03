@@ -958,6 +958,59 @@ fn handle_api(
         }
 
         // ── Options (CORS preflight) ──
+        // ── Planka Proxy ──
+        ("POST", "/api/planka-proxy") => {
+            let args = parse_body();
+            let target_url = args.as_ref().and_then(|a| a.get("url")).and_then(|v| v.as_str()).unwrap_or("");
+            let target_method = args.as_ref().and_then(|a| a.get("method")).and_then(|v| v.as_str()).unwrap_or("GET");
+            let target_body = args.as_ref().and_then(|a| a.get("body")).and_then(|v| v.as_str()).unwrap_or("");
+            let target_token = args.as_ref().and_then(|a| a.get("token")).and_then(|v| v.as_str()).unwrap_or("");
+
+            if target_url.is_empty() {
+                return json_error("Missing 'url' in planka-proxy body", StatusCode(400));
+            }
+
+            // Validate that the URL points to a Planka API endpoint (security check)
+            if !target_url.contains("/api/") {
+                return json_error("Planka proxy only allows /api/ paths", StatusCode(403));
+            }
+
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .danger_accept_invalid_certs(true)
+                .build()
+                .unwrap();
+
+            let mut req = match target_method {
+                "POST" => client.post(target_url),
+                "PUT" => client.put(target_url),
+                "PATCH" => client.patch(target_url),
+                "DELETE" => client.delete(target_url),
+                _ => client.get(target_url),
+            };
+
+            if !target_token.is_empty() {
+                req = req.header("Authorization", format!("Bearer {}", target_token));
+            }
+            req = req.header("Content-Type", "application/json");
+
+            if !target_body.is_empty() && target_method != "GET" {
+                req = req.body(target_body.to_string());
+            }
+
+            match req.send() {
+                Ok(resp) => {
+                    let status = resp.status().as_u16();
+                    let body = resp.text().unwrap_or_default();
+                    let mut response = Response::from_data(body)
+                        .with_status_code(StatusCode(status));
+                    add_cors_headers(&mut response);
+                    response
+                }
+                Err(e) => json_error(&format!("Planka proxy error: {}", e), StatusCode(502)),
+            }
+        }
+
         ("OPTIONS", _) => {
             let mut resp = Response::from_data(vec![]).with_status_code(StatusCode(204));
             add_cors_headers(&mut resp);
