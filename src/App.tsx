@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "./lib/api";
 import { isTauri } from "./lib/api";
+import { Onboarding } from "./components/onboarding/Onboarding";
 import { PaneGrid } from "./components/PaneGrid/PaneGrid";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { StatusBar } from "./components/StatusBar/StatusBar";
@@ -489,6 +490,51 @@ function App() {
     [addProject, handleSyncProjectAgencyAgent, handleBootstrapSpecKit, handleInstallCaveman, upsertSettings, settings.cavemanInstalledAgentIds],
   );
 
+  const handleOnboardingFinish = useCallback(
+    async (result: { project: Project; kanbanChoice: { type: string; plankaConfig?: { baseUrl: string; email: string; password?: string; token?: string } } | null }) => {
+      const draft: AddProjectDraft = {
+        name: result.project.name,
+        path: result.project.path,
+        color: result.project.color,
+        category: result.project.category,
+        defaultAgents: result.project.defaultAgents,
+        mcpServers: [],
+        agencyAgent: result.project.agencyAgent,
+        specKit: result.project.specKit,
+        cavemanAgentIds: [] as string[],
+        mcpPresetIds: [] as string[],
+      };
+
+      const created = await addProject(draft);
+
+      // Apply kanban choice
+      if (result.kanbanChoice?.plankaConfig) {
+        await updateProject(created.id, {
+          planka: result.kanbanChoice.plankaConfig as Partial<Project>["planka"],
+        });
+      }
+
+      // Agency sync
+      if (draft.agencyAgent?.enabled && draft.agencyAgent.selectedAgentSlug) {
+        await handleSyncProjectAgencyAgent(
+          created.path,
+          draft.agencyAgent.selectedAgentSlug,
+          true,
+          draft.category,
+        ).catch(() => undefined);
+      }
+
+      // Spec Kit bootstrap
+      if (draft.specKit?.enabled && draft.specKit.agentId) {
+        await handleBootstrapSpecKit(created.path, draft.specKit.agentId).catch(() => undefined);
+      }
+
+      // Mark onboarding complete
+      upsertSettings({ onboardingCompleted: true });
+    },
+    [addProject, updateProject, handleSyncProjectAgencyAgent, handleBootstrapSpecKit, upsertSettings],
+  );
+
   useEffect(() => {
     if (!bootstrapped || !sessionInitialized) {
       return;
@@ -552,6 +598,20 @@ function App() {
     () => searchLogs(searchQuery),
     [searchLogs, searchQuery],
   );
+
+  const installedAgentIds = useMemo(
+    () => installedAgents.filter((a) => a.installed).map((a) => a.id),
+    [installedAgents],
+  );
+
+  if (bootstrapped && !settings.onboardingCompleted) {
+    return (
+      <Onboarding
+        onFinish={handleOnboardingFinish}
+        installedAgents={installedAgentIds}
+      />
+    );
+  }
 
   return (
     <div className={`nexus-app bg-background dark:bg-[#1a1a1a] text-on-surface dark:text-[#f5f0e8] font-body overflow-hidden h-screen flex flex-col ${settings.theme === "dark" ? "dark" : ""}`}>

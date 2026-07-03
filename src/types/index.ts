@@ -128,6 +128,7 @@ export interface AppSettings {
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   keybindings: KeybindingMap;
+  onboardingCompleted: boolean;
 }
 
 export interface PersistedProjects {

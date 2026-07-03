@@ -43,6 +43,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarCollapsed: false,
   sidebarWidth: 256,
   keybindings: getDefaultKeybindings(),
+  onboardingCompleted: false,
 };
 
 function sanitizeMcpServers(settings: Pick<AppSettings, "mcpServers">) {
