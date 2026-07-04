@@ -167,7 +167,13 @@ export async function loadProjects(): Promise<Project[]> {
     baseDir: fs.BaseDirectory.AppConfig,
   });
 
-  const parsed = parsePersistedJson<PersistedProjects>(contents);
+  let parsed: PersistedProjects;
+  try {
+    parsed = parsePersistedJson<PersistedProjects>(contents);
+  } catch (error) {
+    console.error("Failed to parse projects.json, starting fresh:", error);
+    return [];
+  }
   return Promise.all((parsed.projects ?? []).map((project) =>
     syncSpecKitState({
       ...project,
@@ -198,17 +204,25 @@ export async function saveProjects(projects: Project[]) {
   await ensureDataDir();
   const fs = await getFs();
 
-  const file = await fs.create(PROJECTS_FILE, {
-    baseDir: fs.BaseDirectory.AppConfig,
-  });
-
   const payload: PersistedProjects = {
     version: 1,
     projects: projects.map(sanitizeProject),
   };
 
+  let jsonStr: string;
   try {
-    await file.write(new TextEncoder().encode(JSON.stringify(payload, null, 2)));
+    jsonStr = JSON.stringify(payload, null, 2);
+  } catch (error) {
+    console.error("Failed to stringify projects payload:", error);
+    throw error;
+  }
+
+  const file = await fs.create(PROJECTS_FILE, {
+    baseDir: fs.BaseDirectory.AppConfig,
+  });
+
+  try {
+    await file.write(new TextEncoder().encode(jsonStr));
   } catch (error) {
     console.error("Failed to write projects file:", error);
     throw error;
@@ -235,7 +249,14 @@ export async function loadSessions(): Promise<PersistedSessions | null> {
     baseDir: fs.BaseDirectory.AppConfig,
   });
 
-  const parsed = parsePersistedJson<PersistedSessions>(contents);
+  let parsed: PersistedSessions;
+  try {
+    parsed = parsePersistedJson<PersistedSessions>(contents);
+  } catch (error) {
+    console.error("Failed to parse sessions.json, starting fresh:", error);
+    return null;
+  }
+
   return {
     ...parsed,
     settings: {
@@ -274,12 +295,20 @@ export async function saveSessions(payload: PersistedSessions) {
   await ensureDataDir();
   const fs = await getFs();
 
+  let jsonStr: string;
+  try {
+    jsonStr = JSON.stringify(payload, null, 2);
+  } catch (error) {
+    console.error("Failed to stringify sessions payload:", error);
+    throw error;
+  }
+
   const file = await fs.create(SESSIONS_FILE, {
     baseDir: fs.BaseDirectory.AppConfig,
   });
 
   try {
-    await file.write(new TextEncoder().encode(JSON.stringify(payload, null, 2)));
+    await file.write(new TextEncoder().encode(jsonStr));
   } catch (error) {
     console.error("Failed to write sessions file:", error);
     throw error;

@@ -533,9 +533,16 @@ function App() {
       } finally {
         // Mark onboarding complete no matter what to avoid user lock-out
         upsertSettings({ onboardingCompleted: true });
+        // Immediately flush to disk — don't rely on the useEffect which may not
+        // fire before the user closes the app or before state refs are stale.
+        try {
+          await persistSnapshot(openProjectIds, activeProjectId);
+        } catch (err) {
+          console.error("Failed to persist onboarding completion:", err);
+        }
       }
     },
-    [addProject, updateProject, handleSyncProjectAgencyAgent, handleBootstrapSpecKit, upsertSettings],
+    [addProject, updateProject, handleSyncProjectAgencyAgent, handleBootstrapSpecKit, upsertSettings, persistSnapshot, openProjectIds, activeProjectId],
   );
 
   useEffect(() => {
@@ -607,7 +614,7 @@ function App() {
     [installedAgents],
   );
 
-  if (bootstrapped && !settings.onboardingCompleted) {
+  if (bootstrapped && sessionInitialized && !settings.onboardingCompleted) {
     return (
       <Onboarding
         onFinish={handleOnboardingFinish}
