@@ -7,6 +7,7 @@ import { OnboardingPageProject } from "./OnboardingPageProject";
 import { isTauri } from "../../lib/api";
 import type { PlankaConfig, AddProjectDraft, Project, AppSettings } from "../../types";
 import { PROJECT_SWATCHES } from "../../constants/agents";
+import { useSessionStore } from "../../store/sessionStore";
 
 export interface KanbanOnboardingChoice {
   type: "local" | "planka";
@@ -34,7 +35,7 @@ export const OnboardingContext = createContext<OnboardingContextValue>({
 });
 
 interface OnboardingProps {
-  onFinish: (result: { project: Project; kanbanChoice: KanbanOnboardingChoice | null }) => void;
+  onFinish: (result: { project: Project | null; kanbanChoice: KanbanOnboardingChoice | null }) => void;
   installedAgents: string[];
 }
 
@@ -76,12 +77,12 @@ function OnboardingTitlebar() {
 
   return (
     <header
-      className="w-full h-12 shrink-0 bg-[#0d0d0d] border-b-2 border-[#2a2a2a] flex items-center justify-between px-4 z-20"
+      className="w-full h-12 shrink-0 bg-[#f5f0e8] dark:bg-[#0d0d0d] border-b-4 border-[#1a1a1a] dark:border-[#2a2a2a] flex items-center justify-between px-4 z-20 transition-colors duration-300"
       data-tauri-drag-region
     >
       <div className="flex items-center gap-2" data-tauri-drag-region>
         <img src="/logo.png" alt="Nexus" className="w-6 h-6 object-contain" />
-        <span className="font-['Space_Grotesk'] font-black text-xs uppercase text-[#555] tracking-widest">
+        <span className="font-['Space_Grotesk'] font-black text-xs uppercase text-[#1a1a1a] dark:text-[#888] tracking-widest">
           Nexus Terminal
         </span>
       </div>
@@ -90,7 +91,7 @@ function OnboardingTitlebar() {
           <button
             type="button"
             onClick={handleMinimize}
-            className="w-8 h-8 flex items-center justify-center text-[#555] hover:text-[#ffcc00] hover:bg-[#1a1a1a] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-[#1a1a1a] dark:text-[#555] hover:text-[#ffcc00] hover:bg-[#1a1a1a] dark:hover:bg-[#1a1a1a] transition-colors"
             aria-label="Minimize"
           >
             <span className="material-symbols-outlined text-lg">minimize</span>
@@ -98,7 +99,7 @@ function OnboardingTitlebar() {
           <button
             type="button"
             onClick={handleToggleMaximize}
-            className="w-8 h-8 flex items-center justify-center text-[#555] hover:text-[#ffcc00] hover:bg-[#1a1a1a] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-[#1a1a1a] dark:text-[#555] hover:text-[#ffcc00] hover:bg-[#1a1a1a] dark:hover:bg-[#1a1a1a] transition-colors"
             aria-label={isMaximized ? "Restore" : "Maximize"}
           >
             <span className="material-symbols-outlined text-lg">
@@ -108,7 +109,7 @@ function OnboardingTitlebar() {
           <button
             type="button"
             onClick={handleClose}
-            className="w-8 h-8 flex items-center justify-center text-[#555] hover:text-white hover:bg-[#e63b2e] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-[#1a1a1a] dark:text-[#555] hover:text-white hover:bg-[#e63b2e] dark:hover:bg-[#e63b2e] transition-colors"
             aria-label="Close"
           >
             <span className="material-symbols-outlined text-lg">close</span>
@@ -121,16 +122,13 @@ function OnboardingTitlebar() {
 
 export function Onboarding({ onFinish, installedAgents }: OnboardingProps) {
   const [page, setPage] = useState(0);
-  const [theme, setThemeState] = useState<AppSettings["theme"]>("dark");
+  const settings = useSessionStore((state) => state.settings);
+  const upsertSettings = useSessionStore((state) => state.upsertSettings);
+  const theme = settings.theme;
+
   const setTheme = useCallback((t: AppSettings["theme"]) => {
-    setThemeState(t);
-    if (t === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("nexus-theme", t);
-  }, []);
+    upsertSettings({ theme: t });
+  }, [upsertSettings]);
   const [kanbanChoice, setKanbanChoice] = useState<KanbanOnboardingChoice | null>(null);
   const [projectDraft, setProjectDraft] = useState<AddProjectDraft>({
     name: "",
@@ -169,31 +167,60 @@ export function Onboarding({ onFinish, installedAgents }: OnboardingProps) {
   return (
     <OnboardingContext.Provider value={contextValue}>
       <div
-        className={`fixed inset-0 z-[100] flex flex-col bg-[#0d0d0d] font-['Space_Grotesk'] select-none ${theme === "dark" ? "dark" : ""}`}
+        className={`fixed inset-0 z-[100] flex flex-col bg-[#f5f0e8] dark:bg-[#0d0d0d] text-[#1a1a1a] dark:text-[#f5f0e8] font-['Space_Grotesk'] select-none transition-colors duration-300 ${theme === "dark" ? "dark" : ""}`}
       >
         <OnboardingTitlebar />
 
-        {/* Content area */}
+        {/* Content area — pages only, no nav buttons inside overflow-hidden */}
         <div className="flex-1 relative overflow-hidden">
+          {/* Background dot grid pattern */}
+          <div className="absolute inset-0 opacity-[0.25] dark:opacity-[0.12] bg-[radial-gradient(#1a1a1a_2px,transparent_2px)] dark:bg-[radial-gradient(#ffffff_1.5px,transparent_1.5px)] [background-size:32px_32px] pointer-events-none z-0" />
+
+          {/* Sweeping drafting line */}
+          <div className="absolute left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#ffcc00]/30 dark:via-[#ffcc00]/20 to-transparent pointer-events-none z-0 animate-sweep" />
+
+          {/* Blueprint circular overlays */}
+          <div className="absolute -left-16 -bottom-16 w-80 h-80 rounded-full border-3 border-dashed border-[#1a1a1a]/[0.03] dark:border-[#f5f0e8]/[0.04] pointer-events-none z-0 animate-spin-slow" />
+          <div className="absolute -right-20 -top-20 w-96 h-96 rounded-full border border-dashed border-[#1a1a1a]/[0.03] dark:border-[#f5f0e8]/[0.04] pointer-events-none z-0 animate-[spin_60s_linear_infinite]" />
+
+          {/* Corner Crosshairs */}
+          <div className="absolute left-6 top-6 font-mono text-[#1a1a1a]/15 dark:text-[#f5f0e8]/10 pointer-events-none select-none z-0">+</div >
+          <div className="absolute right-6 top-6 font-mono text-[#1a1a1a]/15 dark:text-[#f5f0e8]/10 pointer-events-none select-none z-0">+</div >
+          <div className="absolute left-6 bottom-6 font-mono text-[#1a1a1a]/15 dark:text-[#f5f0e8]/10 pointer-events-none select-none z-0">+</div >
+          <div className="absolute right-6 bottom-6 font-mono text-[#1a1a1a]/15 dark:text-[#f5f0e8]/10 pointer-events-none select-none z-0">+</div >
+
+          {/* Floating Bauhaus Geometric Shapes */}
+          <div className="absolute top-[10%] left-[6%] w-24 h-24 bg-[#e63b2e] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] opacity-[0.06] dark:opacity-[0.1] animate-[spin_35s_linear_infinite] pointer-events-none z-0" />
+          <div className="absolute bottom-[18%] left-[8%] w-32 h-32 rounded-full bg-[#ffcc00] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] opacity-[0.06] dark:opacity-[0.1] animate-float pointer-events-none z-0" />
+          <div className="absolute top-[22%] right-[6%] w-28 h-28 opacity-[0.06] dark:opacity-[0.1] pointer-events-none z-0" style={{ animationDelay: "-2.5s" }}>
+            <svg viewBox="0 0 100 100" className="w-full h-full text-[#0055ff] stroke-[#1a1a1a] dark:stroke-[#f5f0e8] stroke-[6px] fill-current animate-float">
+              <polygon points="50,10 90,90 10,90" />
+            </svg>
+          </div>
+          <div className="absolute bottom-[10%] right-[10%] w-16 h-16 bg-[#ffcc00] border-4 border-[#1a1a1a] dark:border-[#f5f0e8] rotate-[20deg] opacity-[0.04] dark:opacity-[0.08] pointer-events-none z-0 animate-float" style={{ animationDelay: "-1s" }} />
+
           {PAGES.map(({ index, Component }) => {
             const visible = page === index;
             const PageComponent = Component as React.ComponentType<{
               visible: boolean;
               installedAgents?: string[];
-              onFinish?: (project: Project) => void;
+              onFinish?: (project: Project | null) => void;
             }>;
             return (
               <PageComponent
                 key={index}
                 visible={visible}
                 installedAgents={installedAgents}
-                onFinish={(project: Project) => onFinish({ project, kanbanChoice })}
+                onFinish={(project: Project | null) => onFinish({ project, kanbanChoice })}
               />
             );
           })}
+        </div>
 
+        {/* ── Nav overlay — rendered OUTSIDE overflow-hidden so pages can never intercept clicks ── */}
+        <div className="absolute inset-0 pointer-events-none z-[200]" style={{ top: "40px" }}>
           {/* Page dots */}
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 z-10">
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 pointer-events-auto">
             {Array.from({ length: TOTAL }).map((_, i) => (
               <div
                 key={i}
@@ -208,12 +235,12 @@ export function Onboarding({ onFinish, installedAgents }: OnboardingProps) {
           <button
             type="button"
             onClick={goPrev}
-            className={`absolute left-6 top-1/2 -translate-y-1/2 z-10 w-14 h-14 border-4 border-[#ffcc00] bg-[#1a1a1a] text-[#ffcc00] flex items-center justify-center hover:bg-[#ffcc00] hover:text-[#1a1a1a] transition-all duration-200 ${
-              isFirst ? "opacity-0 pointer-events-none" : "opacity-100"
+            className={`pointer-events-auto absolute left-6 top-1/2 -translate-y-1/2 w-14 h-14 border-4 border-[#1a1a1a] dark:border-[#ffcc00] bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#ffcc00] flex items-center justify-center hover:bg-[#1a1a1a] hover:text-white dark:hover:bg-[#ffcc00] dark:hover:text-[#1a1a1a] shadow-[4px_4px_0px_#1a1a1a] dark:shadow-[4px_4px_0px_#ffcc00] active:opacity-75 transition-all duration-200 cursor-pointer ${
+              isFirst ? "opacity-0 !pointer-events-none" : "opacity-100"
             }`}
             aria-label="Previous page"
           >
-            <span className="material-symbols-outlined text-3xl">arrow_back</span>
+            <span className="material-symbols-outlined text-3xl font-black">arrow_back</span>
           </button>
 
           {/* Right arrow */}
@@ -221,10 +248,10 @@ export function Onboarding({ onFinish, installedAgents }: OnboardingProps) {
             <button
               type="button"
               onClick={goNext}
-              className="absolute right-6 top-1/2 -translate-y-1/2 z-10 w-14 h-14 border-4 border-[#ffcc00] bg-[#1a1a1a] text-[#ffcc00] flex items-center justify-center hover:bg-[#ffcc00] hover:text-[#1a1a1a] transition-all duration-200"
+              className="pointer-events-auto absolute right-6 top-1/2 -translate-y-1/2 w-14 h-14 border-4 border-[#1a1a1a] dark:border-[#ffcc00] bg-white dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-[#ffcc00] flex items-center justify-center hover:bg-[#1a1a1a] hover:text-white dark:hover:bg-[#ffcc00] dark:hover:text-[#1a1a1a] shadow-[4px_4px_0px_#1a1a1a] dark:shadow-[4px_4px_0px_#ffcc00] active:opacity-75 transition-all duration-200 cursor-pointer"
               aria-label="Next page"
             >
-              <span className="material-symbols-outlined text-3xl">arrow_forward</span>
+              <span className="material-symbols-outlined text-3xl font-black">arrow_forward</span>
             </button>
           )}
         </div>

@@ -96,6 +96,7 @@ export const useProjectStore = create<ProjectStoreState>()(
         color: draft.color || PROJECT_SWATCHES[0],
         icon: draft.icon,
         category: draft.category ?? "other",
+        planka: draft.planka,
         defaultAgents: draft.defaultAgents ?? [],
         mcpServers: draft.mcpServers ?? [],
         agencyAgent: draft.agencyAgent ?? {

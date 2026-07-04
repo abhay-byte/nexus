@@ -129,6 +129,11 @@ export interface AppSettings {
   sidebarWidth: number;
   keybindings: KeybindingMap;
   onboardingCompleted: boolean;
+  plankaGlobal?: {
+    baseUrl: string;
+    email: string;
+    token?: string;
+  };
 }
 
 export interface PersistedProjects {
@@ -209,6 +214,7 @@ export interface AddProjectDraft {
   specKit?: SpecKitProjectConfig;
   cavemanAgentIds: AgentId[];
   mcpPresetIds: string[];
+  planka?: Project["planka"];
 }
 
 export interface InstalledAgentStatus {

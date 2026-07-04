@@ -26,8 +26,9 @@ import type {
   RuntimeInfo,
 } from "../../types";
 import { PROJECT_CATEGORIES } from "../../types";
+import { plankaLogin } from "../../lib/planka";
 
-type SettingsSection = "appearance" | "terminal" | "session" | "projects" | "agents" | "keybindings";
+type SettingsSection = "appearance" | "terminal" | "session" | "projects" | "agents" | "keybindings" | "planka";
 
 interface AgencyAgentOption {
   slug: string;
@@ -70,6 +71,7 @@ const SETTINGS_SECTIONS: Array<{
   { id: "projects", label: "Projects", eyebrow: "Workspace", accent: "#ffcc00" },
   { id: "agents", label: "Agents & MCP", eyebrow: "Runtime", accent: "#10B981" },
   { id: "keybindings", label: "Keybindings", eyebrow: "Shortcuts", accent: "#9333ea" },
+  { id: "planka", label: "Planka", eyebrow: "Kanban Cloud", accent: "#0055ff" },
 ];
 
 const SPEC_KIT_SUPPORTED_AGENT_IDS = new Set(["codex", "claude-code", "gemini-cli"]);
@@ -1927,6 +1929,132 @@ function KeybindingsSection({
   );
 }
 
+// ─── Planka Section ──────────────────────────────────────────────────────────
+
+function PlankaSection({
+  settings,
+  onUpdateSettings,
+}: {
+  settings: AppSettings;
+  onUpdateSettings: (patch: Partial<AppSettings>) => void;
+}) {
+  const [url, setUrl] = useState(settings.plankaGlobal?.baseUrl || "");
+  const [email, setEmail] = useState(settings.plankaGlobal?.email || "");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (settings.plankaGlobal?.baseUrl) setUrl(settings.plankaGlobal.baseUrl);
+    if (settings.plankaGlobal?.email) setEmail(settings.plankaGlobal.email);
+  }, [settings.plankaGlobal?.baseUrl, settings.plankaGlobal?.email]);
+
+  const handleSave = async () => {
+    if (!url.trim() || !email.trim() || !password.trim()) {
+      setStatus({ type: "error", message: "URL, email and password are required." });
+      return;
+    }
+    setLoading(true);
+    setStatus(null);
+    try {
+      const token = await plankaLogin(url.trim(), email.trim(), password.trim());
+      onUpdateSettings({ plankaGlobal: { baseUrl: url.trim(), email: email.trim(), token } });
+      setStatus({ type: "success", message: "Connected & saved! All projects will auto-connect." });
+      setPassword("");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Connection failed";
+      setStatus({ type: "error", message: msg });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClear = () => {
+    onUpdateSettings({ plankaGlobal: undefined });
+    setUrl("");
+    setEmail("");
+    setPassword("");
+    setStatus({ type: "success", message: "Planka credentials cleared." });
+  };
+
+  const isConnected = !!settings.plankaGlobal?.token;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">Kanban Cloud</p>
+        <h2 className="mt-3 font-headline text-4xl font-black uppercase leading-none">Planka</h2>
+        <p className="mt-3 font-body text-sm leading-relaxed opacity-70">
+          Save global Planka credentials here. All projects will auto-connect to Planka without needing to enter credentials each time.
+        </p>
+      </div>
+
+      {/* Status badge */}
+      {isConnected && (
+        <div className="flex items-center gap-3 border-4 border-[#10B981] bg-[#10B981]/10 p-4">
+          <span className="material-symbols-outlined text-[#10B981] text-xl">check_circle</span>
+          <div>
+            <p className="font-headline font-black text-sm uppercase text-[#10B981]">Connected</p>
+            <p className="font-mono text-xs opacity-60">{settings.plankaGlobal?.baseUrl} — {settings.plankaGlobal?.email}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Form */}
+      <div className="space-y-4 border-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-white dark:bg-[#1a1a1a] p-5">
+        <div>
+          <FieldLabel>Planka URL</FieldLabel>
+          <TextInput value={url} onChange={setUrl} placeholder="https://planka.example.com" mono />
+        </div>
+        <div>
+          <FieldLabel>Email</FieldLabel>
+          <TextInput value={email} onChange={setEmail} placeholder="user@example.com" mono />
+        </div>
+        <div>
+          <FieldLabel>Password</FieldLabel>
+          <TextInput value={password} onChange={setPassword} placeholder="••••••••" type="password" mono />
+        </div>
+
+        {status && (
+          <div className={`border-2 p-3 font-mono text-xs ${status.type === "success" ? "border-[#10B981] bg-[#10B981]/10 text-[#10B981]" : "border-[#e63b2e] bg-[#e63b2e]/10 text-[#e63b2e]"}`}>
+            {status.message}
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={loading}
+            className="flex-1 border-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-[#ffcc00] text-[#1a1a1a] py-3 font-headline font-black uppercase text-sm hover:bg-[#1a1a1a] hover:text-white dark:hover:bg-white dark:hover:text-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            {loading ? "Connecting…" : isConnected ? "Re-connect & Save" : "Test & Save"}
+          </button>
+          {isConnected && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="border-4 border-[#e63b2e] bg-transparent text-[#e63b2e] px-4 py-3 font-headline font-black uppercase text-sm hover:bg-[#e63b2e] hover:text-white transition-all"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="border-4 border-[#1a1a1a] dark:border-[#f5f0e8] bg-white dark:bg-[#1a1a1a] p-5">
+        <p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">How it works</p>
+        <p className="mt-3 font-headline text-lg font-black uppercase leading-tight">Global credentials, per-project boards</p>
+        <p className="mt-3 font-body text-sm leading-relaxed opacity-70">
+          Credentials saved here are shared across all projects. When you open the Kanban tab for a project that isn't connected yet, Nexus will automatically prefill the Planka URL and email — you just pick the board.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Root component ──────────────────────────────────────────────────────────
 
 export function SettingsWorkspace({
@@ -2021,12 +2149,22 @@ export function SettingsWorkspace({
               })}
             </nav>
 
-            {/* Close button */}
-            <div className="border-t-4 border-[#1a1a1a] p-5 dark:border-[#f5f0e8] lg:mt-auto">
+            {/* Close & Redo buttons */}
+            <div className="border-t-4 border-[#1a1a1a] p-5 dark:border-[#f5f0e8] lg:mt-auto flex flex-col gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateSettings({ onboardingCompleted: false });
+                  onClose();
+                }}
+                className="w-full border-4 border-[#1a1a1a] bg-[#ffcc00] text-[#1a1a1a] px-4 py-2 font-headline text-xs font-black uppercase hover:bg-[#1a1a1a] hover:text-white dark:border-[#f5f0e8] dark:hover:bg-white dark:hover:text-[#1a1a1a] transition-all cursor-pointer"
+              >
+                Redo Onboarding
+              </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full border-4 border-[#1a1a1a] bg-[#1a1a1a] px-4 py-4 font-headline text-lg font-black uppercase text-[#f5f0e8] hover:bg-[#ffcc00] hover:text-[#1a1a1a] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]"
+                className="w-full border-4 border-[#1a1a1a] bg-[#1a1a1a] px-4 py-3 font-headline text-sm font-black uppercase text-[#f5f0e8] hover:bg-[#ffcc00] hover:text-[#1a1a1a] dark:border-[#f5f0e8] dark:bg-[#f5f0e8] dark:text-[#1a1a1a]"
               >
                 Close Settings
               </button>
@@ -2073,6 +2211,9 @@ export function SettingsWorkspace({
               )}
               {section === "keybindings" && (
                 <KeybindingsSection settings={settings} onUpdateSettings={onUpdateSettings} />
+              )}
+              {section === "planka" && (
+                <PlankaSection settings={settings} onUpdateSettings={onUpdateSettings} />
               )}
             </div>
           </main>

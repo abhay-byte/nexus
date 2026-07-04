@@ -5,9 +5,11 @@ import { PlankaSetup } from "./PlankaSetup";
 import { PlankaInstructions } from "./PlankaInstructions";
 import { LocalKanbanInstructions } from "./LocalKanbanInstructions";
 import { useProjectStore } from "../../store/projectStore";
+import { useSessionStore } from "../../store/sessionStore";
 import {
   setPlankaConfig, plankaFetchAllBoardData, plankaCreateCard, plankaMoveCard,
   plankaUpdateCard, plankaDeleteCard, plankaCreateList, plankaDeleteList,
+  plankaLogin, plankaFetchProjects, plankaFetchBoards,
 } from "../../lib/planka";
 import type { PlankaCard, PlankaConfig, PlankaList, Project } from "../../types";
 
@@ -28,6 +30,7 @@ export function KanbanBoard({ projectId, projectName }: KanbanBoardProps) {
   return <LocalKanbanBoard projectId={projectId} projectName={projectName} />;
 }
 
+
 /* ── Local board ───────────────────────────────────────────────────────── */
 
 function LocalKanbanBoard({ projectId, projectName }: { projectId: string; projectName: string }) {
@@ -37,13 +40,27 @@ function LocalKanbanBoard({ projectId, projectName }: { projectId: string; proje
   const deleteTask = useKanbanStore((s) => s.deleteTask);
   const updateTask = useKanbanStore((s) => s.updateTask);
   const updateProject = useProjectStore((s) => s.updateProject);
+  const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId));
+  const plankaConfig = project?.planka;
+  const plankaGlobal = useSessionStore((s) => s.settings.plankaGlobal);
+  const upsertSettings = useSessionStore((s) => s.upsertSettings);
 
-  const [showSetup, setShowSetup] = useState(false);
+  // Auto-open Planka setup if global credentials are saved but this project isn't connected yet
+  const hasGlobalPlanka = !!(plankaGlobal?.baseUrl && plankaGlobal?.email && plankaGlobal?.token);
+  const [showSetup, setShowSetup] = useState(hasGlobalPlanka);
   const [showInstructions, setShowInstructions] = useState(false);
+  const autoConnectFired = useRef(false);
+
+  // If global planka token is available and project isn't connected yet, auto-open setup
+  useEffect(() => {
+    if (!autoConnectFired.current && hasGlobalPlanka && !plankaConfig?.selectedBoardId) {
+      autoConnectFired.current = true;
+      setShowSetup(true);
+    }
+  }, [hasGlobalPlanka, plankaConfig?.selectedBoardId]);
 
   useEffect(() => {
     // Force-clear stale in-memory state, then sync from server.
-    // This ensures HMR / restarts never show old persist data.
     useKanbanStore.setState({ tasks: [] });
     useKanbanStore.getState().syncFromServer();
   }, []);
@@ -72,6 +89,8 @@ function LocalKanbanBoard({ projectId, projectName }: { projectId: string; proje
 
   const handlePlankaConnect = (data: { baseUrl: string; email: string; password: string; token: string; selectedProjectId: string; selectedProjectName: string; selectedBoardId: string; selectedBoardName: string; lists: PlankaList[]; cardsByList: Record<string, PlankaCard[]> }) => {
     updateProject(projectId, { planka: { baseUrl: data.baseUrl, email: data.email, password: data.password, token: data.token, selectedProjectId: data.selectedProjectId, selectedProjectName: data.selectedProjectName, selectedBoardId: data.selectedBoardId, selectedBoardName: data.selectedBoardName } });
+    // Also save globally so other projects can reuse
+    upsertSettings({ plankaGlobal: { baseUrl: data.baseUrl, email: data.email, token: data.token } });
     setShowSetup(false);
   };
 
@@ -80,7 +99,29 @@ function LocalKanbanBoard({ projectId, projectName }: { projectId: string; proje
 
   return (
     <>
-      {showSetup && (<PlankaSetup projectId={projectId} projectName={projectName} onConnect={handlePlankaConnect} onCancel={() => setShowSetup(false)} />)}
+      {showSetup && (
+        <PlankaSetup
+          projectId={projectId}
+          projectName={projectName}
+          initialConfig={
+            plankaConfig
+              ? {
+                  baseUrl: plankaConfig.baseUrl,
+                  email: plankaConfig.email,
+                  selectedProjectId: plankaConfig.selectedProjectId,
+                  selectedBoardId: plankaConfig.selectedBoardId,
+                }
+              : plankaGlobal
+              ? {
+                  baseUrl: plankaGlobal.baseUrl,
+                  email: plankaGlobal.email,
+                }
+              : undefined
+          }
+          onConnect={handlePlankaConnect}
+          onCancel={() => setShowSetup(false)}
+        />
+      )}
       {showInstructions && (<LocalKanbanInstructions projectId={projectId} projectName={projectName} onClose={() => setShowInstructions(false)} />)}
       <div className="flex flex-col h-full bg-[#f5f0e8] dark:bg-[#0d0d0d] overflow-hidden">
         <div className="flex items-center gap-4 px-6 py-3 border-b-2 border-black dark:border-[#333] shrink-0">

@@ -491,46 +491,49 @@ function App() {
   );
 
   const handleOnboardingFinish = useCallback(
-    async (result: { project: Project; kanbanChoice: { type: string; plankaConfig?: { baseUrl: string; email: string; password?: string; token?: string } } | null }) => {
-      const draft: AddProjectDraft = {
-        name: result.project.name,
-        path: result.project.path,
-        color: result.project.color,
-        category: result.project.category,
-        defaultAgents: result.project.defaultAgents,
-        mcpServers: [],
-        agencyAgent: result.project.agencyAgent,
-        specKit: result.project.specKit,
-        cavemanAgentIds: [] as string[],
-        mcpPresetIds: [] as string[],
-      };
+    async (result: { project: Project | null; kanbanChoice: { type: string; plankaConfig?: { baseUrl: string; email: string; password?: string; token?: string } } | null }) => {
+      try {
+        if (result.project) {
+          const draft: AddProjectDraft = {
+            name: result.project.name,
+            path: result.project.path,
+            color: result.project.color,
+            category: result.project.category,
+            icon: result.project.icon,
+            defaultAgents: result.project.defaultAgents,
+            mcpServers: [],
+            agencyAgent: result.project.agencyAgent,
+            specKit: result.project.specKit,
+            cavemanAgentIds: [] as string[],
+            mcpPresetIds: [] as string[],
+            planka: result.kanbanChoice?.plankaConfig
+              ? (result.kanbanChoice.plankaConfig as Project["planka"])
+              : undefined,
+          };
 
-      const created = await addProject(draft);
+          const created = await addProject(draft);
 
-      // Apply kanban choice
-      if (result.kanbanChoice?.plankaConfig) {
-        await updateProject(created.id, {
-          planka: result.kanbanChoice.plankaConfig as Partial<Project>["planka"],
-        });
+          // Agency sync
+          if (draft.agencyAgent?.enabled && draft.agencyAgent.selectedAgentSlug) {
+            await handleSyncProjectAgencyAgent(
+              created.path,
+              draft.agencyAgent.selectedAgentSlug,
+              true,
+              draft.category,
+            ).catch((err) => console.error("Agency agent sync error during onboarding:", err));
+          }
+
+          // Spec Kit bootstrap
+          if (draft.specKit?.enabled && draft.specKit.agentId) {
+            await handleBootstrapSpecKit(created.path, draft.specKit.agentId).catch((err) => console.error("SpecKit bootstrap error during onboarding:", err));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to complete onboarding project registration:", err);
+      } finally {
+        // Mark onboarding complete no matter what to avoid user lock-out
+        upsertSettings({ onboardingCompleted: true });
       }
-
-      // Agency sync
-      if (draft.agencyAgent?.enabled && draft.agencyAgent.selectedAgentSlug) {
-        await handleSyncProjectAgencyAgent(
-          created.path,
-          draft.agencyAgent.selectedAgentSlug,
-          true,
-          draft.category,
-        ).catch(() => undefined);
-      }
-
-      // Spec Kit bootstrap
-      if (draft.specKit?.enabled && draft.specKit.agentId) {
-        await handleBootstrapSpecKit(created.path, draft.specKit.agentId).catch(() => undefined);
-      }
-
-      // Mark onboarding complete
-      upsertSettings({ onboardingCompleted: true });
     },
     [addProject, updateProject, handleSyncProjectAgencyAgent, handleBootstrapSpecKit, upsertSettings],
   );

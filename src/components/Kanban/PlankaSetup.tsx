@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   setPlankaConfig, plankaLogin, plankaFetchProjects, plankaFetchBoards,
   plankaFetchAllBoardData, plankaCreateProject, plankaCreateBoard,
@@ -64,6 +64,20 @@ export function PlankaSetup({ projectName, initialConfig, onConnect, onCancel }:
   const [newBoardName, setNewBoardName] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteDialog | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Track whether user has manually edited the credential fields.
+  // If not, we sync from initialConfig whenever it changes (e.g. after store loads).
+  const userEditedUrl = useRef(false);
+  const userEditedEmail = useRef(false);
+
+  useEffect(() => {
+    if (!userEditedUrl.current && initialConfig?.baseUrl) {
+      setBaseUrl(initialConfig.baseUrl);
+    }
+    if (!userEditedEmail.current && initialConfig?.email) {
+      setEmail(initialConfig.email);
+    }
+  }, [initialConfig?.baseUrl, initialConfig?.email]);
 
   const savedConfig = useCallback(() => ({ baseUrl: baseUrl.replace(/\/+$/, ""), email: email.trim(), password, token }), [baseUrl, email, password, token]);
 
@@ -178,8 +192,8 @@ export function PlankaSetup({ projectName, initialConfig, onConnect, onCancel }:
 
           {step === "credentials" && (
             <>
-              <div><label className="block text-xs font-['Space_Grotesk'] font-black uppercase tracking-wide text-[#1a1a1a] dark:text-[#f5f0e8] mb-1">Planka URL</label><input className="w-full bg-white dark:bg-[#0d0d0d] border-2 border-black dark:border-[#333] p-2 text-xs font-mono text-[#1a1a1a] dark:text-[#f5f0e8] focus:border-[#ffcc00] outline-none" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://planka.example.com" /></div>
-              <div><label className="block text-xs font-['Space_Grotesk'] font-black uppercase tracking-wide text-[#1a1a1a] dark:text-[#f5f0e8] mb-1">Email</label><input className="w-full bg-white dark:bg-[#0d0d0d] border-2 border-black dark:border-[#333] p-2 text-xs font-mono text-[#1a1a1a] dark:text-[#f5f0e8] focus:border-[#ffcc00] outline-none" value={email} onChange={e => setEmail(e.target.value)} placeholder="user@example.com" /></div>
+              <div><label className="block text-xs font-['Space_Grotesk'] font-black uppercase tracking-wide text-[#1a1a1a] dark:text-[#f5f0e8] mb-1">Planka URL</label><input className="w-full bg-white dark:bg-[#0d0d0d] border-2 border-black dark:border-[#333] p-2 text-xs font-mono text-[#1a1a1a] dark:text-[#f5f0e8] focus:border-[#ffcc00] outline-none" value={baseUrl} onChange={e => { userEditedUrl.current = true; setBaseUrl(e.target.value); }} placeholder="https://planka.example.com" /></div>
+              <div><label className="block text-xs font-['Space_Grotesk'] font-black uppercase tracking-wide text-[#1a1a1a] dark:text-[#f5f0e8] mb-1">Email</label><input className="w-full bg-white dark:bg-[#0d0d0d] border-2 border-black dark:border-[#333] p-2 text-xs font-mono text-[#1a1a1a] dark:text-[#f5f0e8] focus:border-[#ffcc00] outline-none" value={email} onChange={e => { userEditedEmail.current = true; setEmail(e.target.value); }} placeholder="user@example.com" /></div>
               <div><label className="block text-xs font-['Space_Grotesk'] font-black uppercase tracking-wide text-[#1a1a1a] dark:text-[#f5f0e8] mb-1">Password</label><input type="password" className="w-full bg-white dark:bg-[#0d0d0d] border-2 border-black dark:border-[#333] p-2 text-xs font-mono text-[#1a1a1a] dark:text-[#f5f0e8] focus:border-[#ffcc00] outline-none" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handleLogin()} /></div>
               <div className="flex justify-end gap-2 mt-2">
                 <button onClick={onCancel} className="text-xs font-['Space_Grotesk'] font-black uppercase px-4 py-2 border-2 border-black dark:border-[#333] text-[#1a1a1a] dark:text-[#f5f0e8] hover:bg-white dark:hover:bg-[#333]" type="button">Cancel</button>
